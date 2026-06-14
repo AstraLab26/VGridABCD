@@ -139,6 +139,13 @@ input double CompoundTotalProfitTriggerUSD = 300.0; // Ngưỡng gốc (USD); ng
 input bool   CompoundResetOnCommonSlHit = true; // Chạm SL chung thì reset
 input bool   EnableCompoundSlPauseUntilNextServerDay = true; // Bật: gồng lãi tổng chạm SL chung → tạm dừng EA tới ngày server kế tiếp mới cho khởi động
 
+input group "━━ 6) RSI — khởi động EA ━━"
+input bool   EnableStartupRsiCrossUpFilter = false;      // Bật: chỉ đặt gốc + lệnh chờ khi RSI (nến đóng) cắt lên X1
+input ENUM_TIMEFRAMES StartupRsiTimeframe = PERIOD_M1;   // Khung RSI; PERIOD_CURRENT = khung chart
+input int    StartupRsiPeriod = 14;                      // Chu kỳ RSI
+input double StartupRsiCrossUpLevel = 70.0;              // X1: cắt lên (RSI shift1 > X1 và shift2 ≤ X1)
+input int    StartupRsiPreCrossUpBarsBelowX1 = 0;        // Trước cắt lên X1: X nến đóng liên tiếp RSI < X1; 0 = bỏ
+
 input group "━━ 7) THÔNG BÁO ━━"
 input bool EnableResetNotification = true;     // Gửi thông báo MT5
 input bool EnableTelegram = true;              // Gửi Telegram
@@ -209,6 +216,9 @@ bool     g_isOnInitBootstrap = false;          // true trong lúc OnInit để t
 long     g_telegramNotifyMsgIds[];             // lưu message_id Telegram bot để tùy chọn xóa tin cũ
 long     g_compoundSlPauseDateKey = 0;         // ngày server khóa sau SL chung gồng lãi tổng (0 = không khóa)
 long     g_compoundSlPauseLoggedDateKey = 0;   // tránh log lặp khi đang khóa SL chung gồng
+int      g_startupRsiHandle = INVALID_HANDLE;  // iRSI chờ cắt lên X1 trước khi đặt gốc
+bool     g_startupRsiCrossLatch = false;       // đã thấy RSI cắt lên X1 → cho phép đặt gốc
+datetime g_startupRsiLastCheckedBar1 = 0;    // nến đóng shift1 đã quét gần nhất
 bool     g_sessionFloatLossAutoFirstLotActive = false; // auto lot đầu chờ ảo đã kích hoạt trong phiên
 bool     g_sessionFloatLossCompoundTriggerActive = false; // ngưỡng gồng lãi tổng đã điều chỉnh trong phiên
 //--- Sau khi chờ ảo khớp market: chặn bổ sung lại chờ ảo cùng phía/mức cho tới khi vị thế hiện hoặc hết hạn
@@ -263,6 +273,11 @@ void ProcessGridCommonStopLoss();
 bool GridCommonSlBlockedByCompoundMode();
 bool IsVirtualGridLegEnabled(const ENUM_VGRID_LEG leg);
 bool TryPlaceBaseAfterStartupFilters();
+void StartupRsiCrossResetLatch();
+void StartupRsiReleaseHandle();
+bool StartupRsiInitHandle();
+bool StartupRsiPollCrossLatch(const bool forceRecheck);
+bool StartupRsiAllowsBasePlacement();
 void SessionFloatLossAdjustReset();
 void SessionFloatLossAdjustPoll();
 double VirtualGridResolvedTradingStopTriggerPips(const ENUM_VGRID_LEG leg);
@@ -1301,6 +1316,7 @@ void CompoundResetAfterCommonSlHit()
    ArrayResize(gridLevels, 0);
    sessionStartTime = 0;
    basePrice = 0.0;
+   StartupRsiCrossResetLatch();
 
    if(EnableCompoundSlPauseUntilNextServerDay)
    {
@@ -1702,11 +1718,131 @@ double GridPriceTolerance()
 
 
 //+------------------------------------------------------------------+
+//| RSI khởi động: chỉ cắt lên X1 (nến đóng shift1 vs shift2).        |
+//+------------------------------------------------------------------+
+ENUM_TIMEFRAMES StartupRsiResolvedTimeframe()
+{
+   ENUM_TIMEFRAMES tf = StartupRsiTimeframe;
+   if(tf == PERIOD_CURRENT)
+      tf = (ENUM_TIMEFRAMES)_Period;
+   return tf;
+}
+
+void StartupRsiCrossResetLatch()
+{
+   g_startupRsiCrossLatch = false;
+   g_startupRsiLastCheckedBar1 = 0;
+}
+
+bool StartupRsiAllowsBasePlacement()
+{
+   if(!EnableStartupRsiCrossUpFilter)
+      return true;
+   return g_startupRsiCrossLatch;
+}
+
+void StartupRsiReleaseHandle()
+{
+   if(g_startupRsiHandle != INVALID_HANDLE)
+   {
+      IndicatorRelease(g_startupRsiHandle);
+      g_startupRsiHandle = INVALID_HANDLE;
+   }
+}
+
+bool StartupRsiInitHandle()
+{
+   StartupRsiReleaseHandle();
+   if(!EnableStartupRsiCrossUpFilter)
+      return true;
+   const ENUM_TIMEFRAMES tf = StartupRsiResolvedTimeframe();
+   const int period = MathMax(2, StartupRsiPeriod);
+   g_startupRsiHandle = iRSI(_Symbol, tf, period, PRICE_CLOSE);
+   if(g_startupRsiHandle == INVALID_HANDLE)
+   {
+      Print("VGridABCD: RSI khởi động — không tạo iRSI (", EnumToString(tf), ", period=", period, ").");
+      return false;
+   }
+   return true;
+}
+
+bool StartupRsiPreCrossUpBarsMeetCondition(const int barCount, const double x1)
+{
+   if(barCount <= 0)
+      return true;
+
+   double rsiPre[];
+   ArraySetAsSeries(rsiPre, true);
+   if(CopyBuffer(g_startupRsiHandle, 0, 2, barCount, rsiPre) < barCount)
+      return false;
+
+   for(int i = 0; i < barCount; i++)
+   {
+      if(!MathIsValidNumber(rsiPre[i]))
+         return false;
+      if(rsiPre[i] >= x1 - 1e-8)
+         return false;
+   }
+   return true;
+}
+
+bool StartupRsiPollCrossLatch(const bool forceRecheck)
+{
+   if(!EnableStartupRsiCrossUpFilter)
+      return true;
+   if(g_startupRsiCrossLatch)
+      return true;
+   if(g_startupRsiHandle == INVALID_HANDLE)
+      return false;
+
+   const ENUM_TIMEFRAMES tf = StartupRsiResolvedTimeframe();
+   const int x3 = MathMax(0, StartupRsiPreCrossUpBarsBelowX1);
+   const int minBars = 3 + x3;
+   if(Bars(_Symbol, tf) < minBars)
+      return false;
+
+   const datetime bar1 = iTime(_Symbol, tf, 1);
+   if(bar1 <= 0)
+      return false;
+   if(!forceRecheck && bar1 == g_startupRsiLastCheckedBar1)
+      return false;
+
+   double rsiBuf[];
+   ArraySetAsSeries(rsiBuf, true);
+   if(CopyBuffer(g_startupRsiHandle, 0, 1, 2, rsiBuf) < 2)
+      return false;
+   if(!MathIsValidNumber(rsiBuf[0]) || !MathIsValidNumber(rsiBuf[1]))
+      return false;
+
+   const double x1 = StartupRsiCrossUpLevel;
+   const bool crossUp = (rsiBuf[0] > x1 && rsiBuf[1] <= x1);
+   if(!crossUp)
+      return false;
+   if(!StartupRsiPreCrossUpBarsMeetCondition(x3, x1))
+      return false;
+
+   g_startupRsiLastCheckedBar1 = bar1;
+   g_startupRsiCrossLatch = true;
+
+   string preNote = "";
+   if(x3 > 0)
+      preNote = " | trước cắt: " + IntegerToString(x3) + " nến RSI < " + DoubleToString(x1, 2);
+
+   Print("VGridABCD: RSI khởi động — cắt lên X1 trên ", EnumToString(tf),
+         " | RSI[1]=", DoubleToString(rsiBuf[0], 2),
+         " RSI[2]=", DoubleToString(rsiBuf[1], 2),
+         " | X1=", DoubleToString(x1, 2), preNote);
+   return true;
+}
+
+//+------------------------------------------------------------------+
 //| Đặt gốc lưới (một lần khi EA sẵn sàng chạy).                        |
 //+------------------------------------------------------------------+
 bool TryPlaceBaseAfterStartupFilters()
 {
    if(basePrice > 0.0)
+      return false;
+   if(!StartupRsiAllowsBasePlacement())
       return false;
 
    basePrice = GridBasePriceAtPlacement();
@@ -2720,6 +2856,10 @@ int OnInit()
    g_gridCommonSlBuyLine = 0.0;
    g_gridCommonSlSellLine = 0.0;
 
+   StartupRsiCrossResetLatch();
+   StartupRsiInitHandle();
+   StartupRsiPollCrossLatch(true);
+
    g_runtimeSessionActive = !IsCompoundSlPauseActiveNow(TimeCurrent());
    g_gridPendingEntryModeSynced = (ENUM_GRID_PENDING_ENTRY_MODE)-1;
    GridPendingEntryModeSync();
@@ -2731,6 +2871,7 @@ int OnInit()
          ArrayResize(gridLevels, 0);
          sessionStartTime = 0;
          basePrice = 0.0;
+         StartupRsiCrossResetLatch();
       }
    }
    else
@@ -2749,6 +2890,10 @@ int OnInit()
          " | B=", VirtualGridResolvedL1(VGRID_LEG_BUY_ABOVE_E),
          " | C=", VirtualGridResolvedL1(VGRID_LEG_SELL_ABOVE),
          " | D=", VirtualGridResolvedL1(VGRID_LEG_SELL_ABOVE_G));
+   if(EnableStartupRsiCrossUpFilter)
+      Print("RSI khởi động: BẬT | ", EnumToString(StartupRsiResolvedTimeframe()),
+            " period=", StartupRsiPeriod, " X1=", DoubleToString(StartupRsiCrossUpLevel, 2),
+            (g_startupRsiCrossLatch ? " | đã cắt lên X1" : " | chờ cắt lên X1"));
    Print("VGridABCD: nạp/rút broker không đổi cấu hình EA — lưới/lot/mục tiêu theo input + P/L giao dịch (TEV), không theo số dư ledger.");
    Print("========================================");
    if(g_runtimeSessionActive)
@@ -2780,6 +2925,7 @@ int OnInit()
 void OnDeinit(const int reason)
 {
    EventKillTimer();
+   StartupRsiReleaseHandle();
    CompoundFloatThrHudDeleteAll();
    MonthlyProfitPanelDeleteAll();
    ObjectDelete(0, VGRIDABCD_EA_START_VLINE);
@@ -2822,6 +2968,7 @@ void OnTick()
       }
 
       g_runtimeSessionActive = true;
+      StartupRsiPollCrossLatch(false);
       if(TryPlaceBaseAfterStartupFilters())
       {
          Print("VGridABCD: hết tạm dừng SL gồng — khởi động phiên mới, base=", DoubleToString(basePrice, dgt));
@@ -2834,6 +2981,7 @@ void OnTick()
          ArrayResize(gridLevels, 0);
          sessionStartTime = 0;
          basePrice = 0.0;
+         StartupRsiCrossResetLatch();
       }
       return;
    }
@@ -2842,9 +2990,12 @@ void OnTick()
 
    if(basePrice <= 0.0)
    {
+      if(EnableStartupRsiCrossUpFilter && !g_startupRsiCrossLatch)
+         StartupRsiPollCrossLatch(false);
       if(!TryPlaceBaseAfterStartupFilters())
          return;
-      Print("VGridABCD: đặt gốc — base=", DoubleToString(basePrice, dgt));
+      Print("VGridABCD: đặt gốc — base=", DoubleToString(basePrice, dgt),
+            (EnableStartupRsiCrossUpFilter ? " (RSI cắt lên X1)" : ""));
       if(EnableResetNotification)
          SendResetNotification("Đủ điều kiện — bắt đầu lưới chờ ảo");
       ManageGridOrders();
