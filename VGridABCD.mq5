@@ -60,6 +60,13 @@ input group "━━ 2) CHUNG (MAGIC / COMMENT) ━━"
 input int MagicNumber = 2084750;                // Magic của EA VGridABCD
 input string CommentOrder = "VPGrid";           // Comment lệnh market
 
+enum ENUM_GRID_PENDING_ENTRY_MODE
+{
+   GRID_PENDING_MODE_VIRTUAL = 0, // Chờ ảo — EA mô phỏng khớp khi giá chạm (mặc định)
+   GRID_PENDING_MODE_BROKER  = 1  // Lệnh chờ broker — Buy/Sell Stop/Limit trên thị trường
+};
+input ENUM_GRID_PENDING_ENTRY_MODE GridPendingEntryMode = GRID_PENDING_MODE_VIRTUAL; // Chế độ vào lệnh chờ
+
 input group "━━ 3) CHỜ ẢO A/B/C/D (mỗi chân: + và − gốc) ━━"
 
 input group "━━ 3a · Buy A (+/−) — lot / TP / Trading Stop ━━"
@@ -182,6 +189,7 @@ double g_compoundFrozenRefPx = 0.0;           // Tham chiếu khóa lúc kích h
 bool g_compoundActivationBuyBasket = false;   // Hướng bước lưới có lợi khi chờ (Bid≥gốc = buy basket)
 bool g_compoundArmed = false;                 // Đạt ngưỡng treo, chờ giá xác nhận (chưa đóng lệnh / chưa xóa chờ ảo)
 bool g_compoundArmBuyBasket = false;          // Hướng chờ khi armed (đồng nghĩa buyBasket khi xác nhận)
+bool g_compoundThresholdReached = false;      // true: tiến độ ≥ ngưỡng — không đặt thêm lệnh chờ
 double g_balanceCompoundCarryUsd = 0.0;       // Carry tổng (cộng dồn): mọi deal OUT âm sau gắn EA → +|lỗ|; ngưỡng 6B1 = gốc + carry (1:1, không trần)
 double g_carryTotalUsdAtGridSessionStart = 0.0; // Mốc carry tại bắt đầu phiên lưới — chỉ hiển thị carry phiên / reset 6h; không trừ khỏi ngưỡng gồng
 double g_compoundSessionClosedNegativeProfitSwapUsd = 0.0; // 6b: Σ phần đóng âm (profit+swap) các deal OUT trong phiên hiện tại (magic+symbol), không commission
@@ -228,6 +236,18 @@ struct VirtualPendingEntry
 VirtualPendingEntry g_virtualPending[];
 
 void VirtualPendingClear();
+void GridPendingEntryModeSync();
+bool GridUsesVirtualPendingMode();
+bool GridUsesBrokerPendingMode();
+bool OrderCommentIsGridPending(const string cmt);
+void BrokerPendingClearAll();
+bool BrokerPendingFindAtLevel(ENUM_ORDER_TYPE orderType,
+                              ENUM_VGRID_LEG leg,
+                              double priceLevel,
+                              ulong &ticket,
+                              double &orderPrice,
+                              long whichMagic);
+void PlacePendingOrder(ENUM_ORDER_TYPE orderType, ENUM_VGRID_LEG leg, double priceLevel, int levelNum);
 void ManageGridOrders();
 void CompoundResetAfterCommonSlHit();
 double GridPriceTolerance();
@@ -412,14 +432,30 @@ void RemoveVirtualPendingsAtLevelSide(double priceLevel, bool isBuy, long whichM
 {
    if(!IsOurMagic(whichMagic)) return;
    double tolerance = GridPriceTolerance();
-   for(int i = ArraySize(g_virtualPending) - 1; i >= 0; i--)
+   if(GridUsesVirtualPendingMode())
    {
-      if(g_virtualPending[i].magic != whichMagic) continue;
-      if(MathAbs(g_virtualPending[i].priceLevel - priceLevel) >= tolerance) continue;
-      ENUM_ORDER_TYPE ot = g_virtualPending[i].orderType;
-      bool entryBuy = (ot == ORDER_TYPE_BUY_STOP || ot == ORDER_TYPE_BUY_LIMIT);
+      for(int i = ArraySize(g_virtualPending) - 1; i >= 0; i--)
+      {
+         if(g_virtualPending[i].magic != whichMagic) continue;
+         if(MathAbs(g_virtualPending[i].priceLevel - priceLevel) >= tolerance) continue;
+         ENUM_ORDER_TYPE ot = g_virtualPending[i].orderType;
+         bool entryBuy = (ot == ORDER_TYPE_BUY_STOP || ot == ORDER_TYPE_BUY_LIMIT);
+         if(entryBuy == isBuy)
+            VirtualPendingRemoveAt(i);
+      }
+      return;
+   }
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
+   {
+      const ulong ticket = OrderGetTicket(i);
+      if(ticket == 0 || !OrderIsOurSymbolAndMagic(ticket)) continue;
+      if(!OrderCommentIsGridPending(OrderGetString(ORDER_COMMENT))) continue;
+      const double op = OrderGetDouble(ORDER_PRICE_OPEN);
+      if(MathAbs(op - priceLevel) >= tolerance) continue;
+      const ENUM_ORDER_TYPE ot = (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+      const bool entryBuy = (ot == ORDER_TYPE_BUY_STOP || ot == ORDER_TYPE_BUY_LIMIT);
       if(entryBuy == isBuy)
-         VirtualPendingRemoveAt(i);
+         trade.OrderDelete(ticket);
    }
 }
 
@@ -602,7 +638,16 @@ void CompoundModeClearState()
    g_compoundFrozenRefPx = 0.0;
    g_compoundArmed = false;
    g_compoundArmBuyBasket = false;
+   g_compoundThresholdReached = false;
    CompoundFloatThrHudUpdate(false);
+}
+
+//+------------------------------------------------------------------+
+//| true = không đặt thêm lệnh chờ (đạt ngưỡng hoặc đang gồng).      |
+//+------------------------------------------------------------------+
+bool CompoundBlocksNewPendingOrders()
+{
+   return (g_compoundTotalProfitActive || g_compoundArmed || g_compoundAfterClearWaitGrid || g_compoundThresholdReached);
 }
 
 //+------------------------------------------------------------------+
@@ -795,7 +840,24 @@ void CompoundClearVirtualPendingsIfPriceAboveReference(const bool buyBasket, con
 {
    if(refPx <= 0.0 || !MathIsValidNumber(refPx))
       return;
-   if(ArraySize(g_virtualPending) < 1)
+   bool hasPending = false;
+   if(GridUsesVirtualPendingMode())
+      hasPending = (ArraySize(g_virtualPending) >= 1);
+   else
+   {
+      for(int i = 0; i < OrdersTotal(); i++)
+      {
+         const ulong t = OrderGetTicket(i);
+         if(t == 0 || !OrderIsOurSymbolAndMagic(t))
+            continue;
+         if(OrderCommentIsGridPending(OrderGetString(ORDER_COMMENT)))
+         {
+            hasPending = true;
+            break;
+         }
+      }
+   }
+   if(!hasPending)
       return;
    const double pt = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
    const double tol = MathMax(GridPriceTolerance(), pt * 2.0);
@@ -821,12 +883,23 @@ void CompoundClearVirtualPendingsIfPriceAboveReference(const bool buyBasket, con
 }
 
 //+------------------------------------------------------------------+
-//| Điểm A tham chiếu: lệnh đúng phía, cùng phiên, có bậc dương xa gốc nhất. |
+//| Điểm A: lệnh mở đúng phía, bậc dương nhỏ nhất (±1 gần gốc nhất); |
+//| hòa bậc → chọn giá gần Bid/Ask hiện tại nhất.                     |
 //+------------------------------------------------------------------+
 bool CompoundEvaluateDeferredBasket(const bool buyBasket, double &refPxOut)
 {
    refPxOut = 0.0;
+   if(basePrice <= 0.0)
+      return false;
+
+   const double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   const double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   const double refPrice = buyBasket ? bid : ask;
+
    bool haveRef = false;
+   int bestLevelAbs = 0;
+   double bestDist = 0.0;
+
    for(int k = 0; k < PositionsTotal(); k++)
    {
       ulong ticket = PositionGetTicket(k);
@@ -844,9 +917,24 @@ bool CompoundEvaluateDeferredBasket(const bool buyBasket, double &refPxOut)
          continue;
       if(!buyBasket && op >= basePrice)
          continue;
-      if(!haveRef || (buyBasket && op > refPxOut) || (!buyBasket && op < refPxOut))
+
+      int signedLvl = 0;
+      if(!FindSignedLevelNumForPrice(op, signedLvl))
+         continue;
+      if(buyBasket && signedLvl <= 0)
+         continue;
+      if(!buyBasket && signedLvl >= 0)
+         continue;
+
+      const int levelAbs = MathAbs(signedLvl);
+      const double dist = MathAbs(op - refPrice);
+      if(!haveRef
+         || levelAbs < bestLevelAbs
+         || (levelAbs == bestLevelAbs && dist < bestDist))
       {
          refPxOut = op;
+         bestLevelAbs = levelAbs;
+         bestDist = dist;
          haveRef = true;
       }
    }
@@ -1095,6 +1183,7 @@ void TryArmCompoundTotalProfitMode()
       carryLog = "; gốc " + DoubleToString(GetCompoundBaseTriggerUsd(), 2)
                  + " + carry " + DoubleToString(carryContributionUsd, 2) + " (1:1, không trần)";
    Print("VGridABCD: Gồng lãi tổng — ARM (chờ đủ giá + đủ ngưỡng). Điểm A=", DoubleToString(refPx, dgt),
+         " (bậc dương nhỏ nhất, gần giá nhất)",
          " | 1 pip=", DoubleToString(onePip, dgt),
          (step > 0.0 ? (" | bước lưới=" + DoubleToString(step, dgt)) : ""),
          " | ngưỡng=", DoubleToString(GetCompoundFloatingTriggerThresholdUsd(), 2), " USD (",
@@ -1239,8 +1328,8 @@ void CompoundResetAfterCommonSlHit()
 }
 
 //+------------------------------------------------------------------+
-//| SL chung BUY: mức = maxBuy + (k-1)*bước với k=floor((Bid-maxBuy)/step), k≥1. |
-//| Ví dụ maxBuy=1300, step=100: Bid≥1400 → SL=1300; Bid≥1500 → SL=1400 (không nhảy 2 bậc trong 1 tick). |
+//| SL chung BUY: mức = điểm A + (k-1)*bước với k=floor((Bid−A)/step), k≥1. |
+//| A = bậc dương nhỏ nhất (±1). Ví dụ A=1300, step=100: Bid≥1400 → SL=1300. |
 //+------------------------------------------------------------------+
 void ProcessCompoundTotalProfitTrailing()
 {
@@ -1262,8 +1351,8 @@ void ProcessCompoundTotalProfitTrailing()
    const double touchTol = MathMax(GridPriceTolerance(), pt * 3.0);
    const double prevCommonSlLine = g_compoundCommonSlLine;
 
-   double extOpen = 0.0;
-   bool haveExt = false;
+   double pointA = 0.0;
+   bool havePointA = false;
    int managed = 0;
 
    for(int i = 0; i < PositionsTotal(); i++)
@@ -1282,11 +1371,6 @@ void ProcessCompoundTotalProfitTrailing()
          if(op <= basePrice)
             continue;
          managed++;
-         if(!haveExt || op > extOpen)
-         {
-            extOpen = op;
-            haveExt = true;
-         }
       }
       else
       {
@@ -1295,15 +1379,12 @@ void ProcessCompoundTotalProfitTrailing()
          if(op >= basePrice)
             continue;
          managed++;
-         if(!haveExt || op < extOpen)
-         {
-            extOpen = op;
-            haveExt = true;
-         }
       }
    }
 
-   if(managed == 0 || !haveExt)
+   havePointA = CompoundEvaluateDeferredBasket(g_compoundBuyBasketMode, pointA);
+
+   if(managed == 0 || !havePointA)
    {
       CompoundModeClearState();
       Print("VGridABCD: Gồng lãi tổng — hết vị thế quản lý, TẮT chế độ.");
@@ -1311,7 +1392,7 @@ void ProcessCompoundTotalProfitTrailing()
       return;
    }
 
-   CompoundClearVirtualPendingsIfPriceAboveReference(g_compoundBuyBasketMode, extOpen);
+   CompoundClearVirtualPendingsIfPriceAboveReference(g_compoundBuyBasketMode, pointA);
 
    const bool resetOnCommonSl = CompoundResetOnCommonSlHit;
    if(resetOnCommonSl && g_compoundCommonSlLine > 0.0)
@@ -1338,12 +1419,12 @@ void ProcessCompoundTotalProfitTrailing()
 
    if(g_compoundBuyBasketMode)
    {
-      if(bid >= extOpen + step - pt * 0.5)
+      if(bid >= pointA + step - pt * 0.5)
       {
-         const int k = (int)MathFloor((bid - extOpen) / step + 1e-8);
+         const int k = (int)MathFloor((bid - pointA) / step + 1e-8);
          if(k >= 1)
          {
-            const double candidate = NormalizeDouble(extOpen + (double)(k - 1) * step, dgt);
+            const double candidate = NormalizeDouble(pointA + (double)(k - 1) * step, dgt);
             if(candidate > 0.0)
             {
                if(g_compoundCommonSlLine <= 0.0)
@@ -1356,12 +1437,12 @@ void ProcessCompoundTotalProfitTrailing()
    }
    else
    {
-      if(ask <= extOpen - step + pt * 0.5)
+      if(ask <= pointA - step + pt * 0.5)
       {
-         const int k = (int)MathFloor((extOpen - ask) / step + 1e-8);
+         const int k = (int)MathFloor((pointA - ask) / step + 1e-8);
          if(k >= 1)
          {
-            const double candidate = NormalizeDouble(extOpen - (double)(k - 1) * step, dgt);
+            const double candidate = NormalizeDouble(pointA - (double)(k - 1) * step, dgt);
             if(candidate > 0.0)
             {
                if(g_compoundCommonSlLine <= 0.0)
@@ -1441,12 +1522,108 @@ void ProcessCompoundTotalProfitTrailing()
 }
 
 //+------------------------------------------------------------------+
+//| Chế độ chờ ảo vs lệnh chờ broker                                   |
+//+------------------------------------------------------------------+
+bool GridUsesVirtualPendingMode()
+{
+   return (GridPendingEntryMode == GRID_PENDING_MODE_VIRTUAL);
+}
+
+bool GridUsesBrokerPendingMode()
+{
+   return (GridPendingEntryMode == GRID_PENDING_MODE_BROKER);
+}
+
+bool OrderCommentIsGridPending(const string cmt)
+{
+   if(StringFind(cmt, "VGridABCD|") >= 0)
+      return true;
+   if(StringFind(cmt, "VDualGrid|") >= 0)
+      return true;
+   return false;
+}
+
+void BrokerPendingClearAll()
+{
+   trade.SetExpertMagicNumber(MagicAA);
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
+   {
+      const ulong ticket = OrderGetTicket(i);
+      if(ticket == 0 || !OrderIsOurSymbolAndMagic(ticket))
+         continue;
+      if(!OrderCommentIsGridPending(OrderGetString(ORDER_COMMENT)))
+         continue;
+      trade.OrderDelete(ticket);
+   }
+}
+
+bool BrokerPendingFindAtLevel(ENUM_ORDER_TYPE orderType,
+                              ENUM_VGRID_LEG leg,
+                              double priceLevel,
+                              ulong &ticket,
+                              double &orderPrice,
+                              long whichMagic)
+{
+   if(!IsOurMagic(whichMagic))
+      return false;
+   const double tolerance = GridPriceTolerance();
+   ticket = 0;
+   orderPrice = 0.0;
+   const string legTag = "|" + VirtualGridLegCode(leg) + "|";
+   for(int i = 0; i < OrdersTotal(); i++)
+   {
+      const ulong t = OrderGetTicket(i);
+      if(t == 0 || !OrderIsOurSymbolAndMagic(t))
+         continue;
+      const string cmt = OrderGetString(ORDER_COMMENT);
+      if(!OrderCommentIsGridPending(cmt))
+         continue;
+      if(StringFind(cmt, legTag) < 0)
+         continue;
+      const ENUM_ORDER_TYPE ot = (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+      if(ot != orderType)
+         continue;
+      const double op = OrderGetDouble(ORDER_PRICE_OPEN);
+      if(MathAbs(op - priceLevel) >= tolerance)
+         continue;
+      ticket = t;
+      orderPrice = op;
+      return true;
+   }
+   return false;
+}
+
+static ENUM_GRID_PENDING_ENTRY_MODE g_gridPendingEntryModeSynced = (ENUM_GRID_PENDING_ENTRY_MODE)-1;
+
+void GridPendingEntryModeSync()
+{
+   if(g_gridPendingEntryModeSynced == GridPendingEntryMode)
+      return;
+   if(g_gridPendingEntryModeSynced != (ENUM_GRID_PENDING_ENTRY_MODE)-1)
+   {
+      Print("VGridABCD: chế độ chờ → ",
+            (GridUsesVirtualPendingMode() ? "CHỜ ẢO" : "CHỜ BROKER"),
+            " — dọn storage chế độ cũ.");
+   }
+   if(GridUsesVirtualPendingMode())
+      BrokerPendingClearAll();
+   else
+   {
+      ArrayResize(g_virtualPending, 0);
+      ArrayResize(g_virtualExecCooldown, 0);
+   }
+   g_gridPendingEntryModeSynced = GridPendingEntryMode;
+}
+
+//+------------------------------------------------------------------+
 //| Virtual pending: clear all                                        |
 //+------------------------------------------------------------------+
 void VirtualPendingClear()
 {
    ArrayResize(g_virtualPending, 0);
    ArrayResize(g_virtualExecCooldown, 0);
+   if(GridUsesBrokerPendingMode())
+      BrokerPendingClearAll();
 }
 
 //+------------------------------------------------------------------+
@@ -1593,22 +1770,41 @@ void RemoveStaleVirtualTypesAtLevel(double priceLevel, ENUM_ORDER_TYPE wantBuy, 
 {
    if(!IsOurMagic(whichMagic)) return;
    double tolerance = GridPriceTolerance();
-   for(int i = ArraySize(g_virtualPending) - 1; i >= 0; i--)
+   if(GridUsesVirtualPendingMode())
    {
-      if(g_virtualPending[i].magic != whichMagic) continue;
-      if(MathAbs(g_virtualPending[i].priceLevel - priceLevel) >= tolerance) continue;
-      ENUM_ORDER_TYPE ot = g_virtualPending[i].orderType;
-      bool isBuy = (ot == ORDER_TYPE_BUY_STOP || ot == ORDER_TYPE_BUY_LIMIT);
-      if(isBuy)
+      for(int i = ArraySize(g_virtualPending) - 1; i >= 0; i--)
       {
-         if(ot != wantBuy)
-            VirtualPendingRemoveAt(i);
+         if(g_virtualPending[i].magic != whichMagic) continue;
+         if(MathAbs(g_virtualPending[i].priceLevel - priceLevel) >= tolerance) continue;
+         ENUM_ORDER_TYPE ot = g_virtualPending[i].orderType;
+         bool isBuy = (ot == ORDER_TYPE_BUY_STOP || ot == ORDER_TYPE_BUY_LIMIT);
+         if(isBuy)
+         {
+            if(ot != wantBuy)
+               VirtualPendingRemoveAt(i);
+         }
+         else
+         {
+            if(ot != wantSell)
+               VirtualPendingRemoveAt(i);
+         }
       }
-      else
-      {
-         if(ot != wantSell)
-            VirtualPendingRemoveAt(i);
-      }
+      return;
+   }
+   trade.SetExpertMagicNumber(MagicAA);
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
+   {
+      const ulong ticket = OrderGetTicket(i);
+      if(ticket == 0 || !OrderIsOurSymbolAndMagic(ticket)) continue;
+      if(!OrderCommentIsGridPending(OrderGetString(ORDER_COMMENT))) continue;
+      const double op = OrderGetDouble(ORDER_PRICE_OPEN);
+      if(MathAbs(op - priceLevel) >= tolerance) continue;
+      const ENUM_ORDER_TYPE ot = (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+      const bool isBuy = (ot == ORDER_TYPE_BUY_STOP || ot == ORDER_TYPE_BUY_LIMIT);
+      if(isBuy && ot != wantBuy)
+         trade.OrderDelete(ticket);
+      else if(!isBuy && ot != wantSell)
+         trade.OrderDelete(ticket);
    }
 }
 
@@ -1693,6 +1889,8 @@ bool VirtualReplenishBlockedAfterExecution(double priceLevel, ENUM_ORDER_TYPE or
 //+------------------------------------------------------------------+
 void ProcessVirtualPendingExecutions()
 {
+   if(!GridUsesVirtualPendingMode())
+      return;
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    double tol = pnt * 2.0;
@@ -2523,6 +2721,8 @@ int OnInit()
    g_gridCommonSlSellLine = 0.0;
 
    g_runtimeSessionActive = !IsCompoundSlPauseActiveNow(TimeCurrent());
+   g_gridPendingEntryModeSynced = (ENUM_GRID_PENDING_ENTRY_MODE)-1;
+   GridPendingEntryModeSync();
    if(g_runtimeSessionActive)
    {
       if(!TryPlaceBaseAfterStartupFilters())
@@ -2543,7 +2743,8 @@ int OnInit()
    Print("========================================");
    Print("VGridABCD đã chạy.");
    Print("Symbol: ", _Symbol, " | Base: ", basePrice, " | Grid: ", GridDistancePips, " pips | Levels: ", ArraySize(gridLevels));
-   Print("Chờ ảo: chân Buy A/B, Sell C/D (+/−) | mức=", ArraySize(gridLevels),
+   Print("Chế độ chờ: ", (GridUsesVirtualPendingMode() ? "CHỜ ẢO" : "CHỜ BROKER"),
+         " | chân Buy A/B, Sell C/D (+/−) | mức=", ArraySize(gridLevels),
          " | L1 A=", VirtualGridResolvedL1(VGRID_LEG_BUY_ABOVE),
          " | B=", VirtualGridResolvedL1(VGRID_LEG_BUY_ABOVE_E),
          " | C=", VirtualGridResolvedL1(VGRID_LEG_SELL_ABOVE),
@@ -2683,6 +2884,14 @@ void OnTick()
    }
 
    const double compoundTriggerProgressUsd = GetCompoundTriggerProgressUsd(compoundOpenProfitSwapUsd);
+
+   if(EnableCompoundTotalFloatingProfit && GetCompoundBaseTriggerUsd() > 0.0)
+   {
+      if(compoundTriggerProgressUsd >= GetCompoundFloatingTriggerThresholdUsd())
+         g_compoundThresholdReached = true;
+      else if(!g_compoundTotalProfitActive && !g_compoundArmed && !g_compoundAfterClearWaitGrid)
+         g_compoundThresholdReached = false;
+   }
 
    if(g_compoundTotalProfitActive)
       ProcessCompoundTotalProfitTrailing();
@@ -3223,6 +3432,8 @@ void CancelStopOrdersOutsideBaseZone()
       ulong ticket = OrderGetTicket(i);
       if(ticket <= 0 || !IsOurMagic(OrderGetInteger(ORDER_MAGIC)) || OrderGetString(ORDER_SYMBOL) != _Symbol)
          continue;
+      if(!OrderCommentIsGridPending(OrderGetString(ORDER_COMMENT)))
+         continue;
       double price = OrderGetDouble(ORDER_PRICE_OPEN);
       if(!VirtualPriceMatchesRegisteredGrid(price))
          trade.OrderDelete(ticket);
@@ -3616,15 +3827,48 @@ bool VirtualGridLegHasOpenPositionAtLevel(const ENUM_VGRID_LEG leg, const double
 
 void SyncVirtualPendingLotsForSessionFloatAutoFirstLot()
 {
-   for(int i = 0; i < ArraySize(g_virtualPending); i++)
+   if(GridUsesVirtualPendingMode())
    {
-      const ENUM_VGRID_LEG leg = g_virtualPending[i].leg;
+      for(int i = 0; i < ArraySize(g_virtualPending); i++)
+      {
+         const ENUM_VGRID_LEG leg = g_virtualPending[i].leg;
+         if(!IsVirtualGridLegEnabled(leg))
+            continue;
+         if(VirtualGridLegHasOpenPositionAtLevel(leg, g_virtualPending[i].priceLevel))
+            continue;
+         const int absLvl = MathMax(1, MathAbs(g_virtualPending[i].levelNum));
+         g_virtualPending[i].lot = GetLotForVirtualGridLeg(leg, absLvl);
+      }
+      return;
+   }
+   trade.SetExpertMagicNumber(MagicAA);
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
+   {
+      const ulong ticket = OrderGetTicket(i);
+      if(ticket == 0 || !OrderIsOurSymbolAndMagic(ticket))
+         continue;
+      const string cmt = OrderGetString(ORDER_COMMENT);
+      if(!OrderCommentIsGridPending(cmt))
+         continue;
+      ENUM_VGRID_LEG leg;
+      if(!TryParseLegFromOrderComment(cmt, leg))
+         continue;
       if(!IsVirtualGridLegEnabled(leg))
          continue;
-      if(VirtualGridLegHasOpenPositionAtLevel(leg, g_virtualPending[i].priceLevel))
+      const double priceLevel = OrderGetDouble(ORDER_PRICE_OPEN);
+      if(VirtualGridLegHasOpenPositionAtLevel(leg, priceLevel))
          continue;
-      const int absLvl = MathMax(1, MathAbs(g_virtualPending[i].levelNum));
-      g_virtualPending[i].lot = GetLotForVirtualGridLeg(leg, absLvl);
+      int signedLevelNum = 0;
+      if(!TryParseSignedLevelFromOrderComment(cmt, signedLevelNum))
+         continue;
+      const int absLvl = MathMax(1, MathAbs(signedLevelNum));
+      const double newLot = GetLotForVirtualGridLeg(leg, absLvl);
+      const double curLot = OrderGetDouble(ORDER_VOLUME_CURRENT);
+      if(MathAbs(curLot - newLot) < 1e-8)
+         continue;
+      const ENUM_ORDER_TYPE ot = (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+      trade.OrderDelete(ticket);
+      PlacePendingOrder(ot, leg, priceLevel, signedLevelNum);
    }
 }
 
@@ -4025,22 +4269,48 @@ void RemoveDuplicateOrdersAtLevel()
             }
             int idxList[];
             ArrayResize(idxList, 0);
-            for(int i = 0; i < ArraySize(g_virtualPending); i++)
+            if(GridUsesVirtualPendingMode())
             {
-               if(g_virtualPending[i].magic != whichMagic) continue;
-               if(g_virtualPending[i].leg != leg) continue;
-               if(MathAbs(g_virtualPending[i].priceLevel - priceLevel) >= tolerance) continue;
-               int n = ArraySize(idxList);
-               ArrayResize(idxList, n + 1);
-               idxList[n] = i;
+               for(int i = 0; i < ArraySize(g_virtualPending); i++)
+               {
+                  if(g_virtualPending[i].magic != whichMagic) continue;
+                  if(g_virtualPending[i].leg != leg) continue;
+                  if(MathAbs(g_virtualPending[i].priceLevel - priceLevel) >= tolerance) continue;
+                  int n = ArraySize(idxList);
+                  ArrayResize(idxList, n + 1);
+                  idxList[n] = i;
+               }
+               int keep = (positionCount >= 1) ? 0 : 1;
+               if(ArraySize(idxList) <= keep) continue;
+               for(int a = keep; a < ArraySize(idxList) - 1; a++)
+                  for(int b = a + 1; b < ArraySize(idxList); b++)
+                     if(idxList[a] < idxList[b]) { int t = idxList[a]; idxList[a] = idxList[b]; idxList[b] = t; }
+               for(int k = keep; k < ArraySize(idxList); k++)
+                  VirtualPendingRemoveAt(idxList[k]);
             }
-            int keep = (positionCount >= 1) ? 0 : 1;
-            if(ArraySize(idxList) <= keep) continue;
-            for(int a = keep; a < ArraySize(idxList) - 1; a++)
-               for(int b = a + 1; b < ArraySize(idxList); b++)
-                  if(idxList[a] < idxList[b]) { int t = idxList[a]; idxList[a] = idxList[b]; idxList[b] = t; }
-            for(int k = keep; k < ArraySize(idxList); k++)
-               VirtualPendingRemoveAt(idxList[k]);
+            else
+            {
+               ulong ticketList[];
+               ArrayResize(ticketList, 0);
+               const string legTag = "|" + VirtualGridLegCode(leg) + "|";
+               for(int i = 0; i < OrdersTotal(); i++)
+               {
+                  const ulong ticket = OrderGetTicket(i);
+                  if(ticket == 0 || !OrderIsOurSymbolAndMagic(ticket)) continue;
+                  const string cmt = OrderGetString(ORDER_COMMENT);
+                  if(!OrderCommentIsGridPending(cmt)) continue;
+                  if(StringFind(cmt, legTag) < 0) continue;
+                  if(MathAbs(OrderGetDouble(ORDER_PRICE_OPEN) - priceLevel) >= tolerance) continue;
+                  int n = ArraySize(ticketList);
+                  ArrayResize(ticketList, n + 1);
+                  ticketList[n] = ticket;
+               }
+               int keep = (positionCount >= 1) ? 0 : 1;
+               if(ArraySize(ticketList) <= keep) continue;
+               trade.SetExpertMagicNumber(MagicAA);
+               for(int k = keep; k < ArraySize(ticketList); k++)
+                  trade.OrderDelete(ticketList[k]);
+            }
          }
       }
    }
@@ -4053,9 +4323,10 @@ void ManageGridOrders()
 {
    if(basePrice <= 0.0)
       return;
-   if(g_compoundTotalProfitActive || g_compoundAfterClearWaitGrid)
+   if(CompoundBlocksNewPendingOrders())
       return;
 
+   GridPendingEntryModeSync();
    SessionFloatLossAdjustPoll();
 
    CancelStopOrdersOutsideBaseZone();
@@ -4128,9 +4399,11 @@ bool GetPendingOrderAtLevel(ENUM_ORDER_TYPE orderType,
                             long whichMagic)
 {
    if(!IsOurMagic(whichMagic)) return false;
-   double tolerance = gridStep * 0.5;
-   if(gridStep <= 0) tolerance = pnt * 10.0 * GridDistancePips * 0.5;
    ticket = 0;
+   orderPrice = 0.0;
+   if(GridUsesBrokerPendingMode())
+      return BrokerPendingFindAtLevel(orderType, leg, priceLevel, ticket, orderPrice, whichMagic);
+   double tolerance = GridPriceTolerance();
    for(int i = 0; i < ArraySize(g_virtualPending); i++)
    {
       if(g_virtualPending[i].magic != whichMagic) continue;
@@ -4151,14 +4424,29 @@ bool GetPendingOrderAtLevel(ENUM_ORDER_TYPE orderType,
 void AdjustVirtualPendingToLevel(long magic, ENUM_ORDER_TYPE orderType, ENUM_VGRID_LEG leg, double oldPrice, double priceLevel, int signedLevelNum)
 {
    if(!IsOurMagic(magic)) return;
-   int idx = VirtualPendingFindIndex(magic, orderType, leg, oldPrice);
-   if(idx < 0) return;
    double price = NormalizeDouble(priceLevel, dgt);
    double tp = ComputeVirtualTakeProfitPrice(orderType, leg, price, signedLevelNum);
    const int absLvl = MathMax(1, MathAbs(signedLevelNum));
+   const double lot = GetLotForVirtualGridLeg(leg, absLvl);
+   if(GridUsesBrokerPendingMode())
+   {
+      ulong ticket = 0;
+      double existingPrice = 0.0;
+      if(!BrokerPendingFindAtLevel(orderType, leg, oldPrice, ticket, existingPrice, magic))
+         return;
+      trade.SetExpertMagicNumber(magic);
+      if(trade.OrderModify(ticket, price, 0.0, tp, ORDER_TIME_GTC, 0))
+         Print("VGridABCD adjust broker: ", EnumToString(orderType), " magic ", magic, " at ", price,
+               " lot ", DoubleToString(lot, 2), " TP ", tp);
+      else
+         Print("VGridABCD adjust broker fail ticket ", ticket, " err ", GetLastError());
+      return;
+   }
+   int idx = VirtualPendingFindIndex(magic, orderType, leg, oldPrice);
+   if(idx < 0) return;
    g_virtualPending[idx].priceLevel = price;
    g_virtualPending[idx].tpPrice = tp;
-   g_virtualPending[idx].lot = GetLotForVirtualGridLeg(leg, absLvl);
+   g_virtualPending[idx].lot = lot;
    Print("VGridABCD adjust: ", EnumToString(orderType), " magic ", magic, " at ", price,
          " lot ", DoubleToString(g_virtualPending[idx].lot, 2), " TP ", tp);
 }
@@ -4169,16 +4457,32 @@ void AdjustVirtualPendingToLevel(long magic, ENUM_ORDER_TYPE orderType, ENUM_VGR
 bool CanPlaceOrderAtLevel(ENUM_ORDER_TYPE orderType, ENUM_VGRID_LEG leg, double priceLevel, long whichMagic)
 {
    if(!IsOurMagic(whichMagic)) return false;
-   double tolerance = gridStep * 0.5;
-   if(gridStep <= 0) tolerance = pnt * 10.0 * GridDistancePips * 0.5;
+   double tolerance = GridPriceTolerance();
    int countSameLevel = 0;
 
-   for(int i = 0; i < ArraySize(g_virtualPending); i++)
+   if(GridUsesVirtualPendingMode())
    {
-      if(g_virtualPending[i].magic != whichMagic) continue;
-      if(MathAbs(g_virtualPending[i].priceLevel - priceLevel) >= tolerance) continue;
-      if(g_virtualPending[i].leg == leg)
+      for(int i = 0; i < ArraySize(g_virtualPending); i++)
+      {
+         if(g_virtualPending[i].magic != whichMagic) continue;
+         if(MathAbs(g_virtualPending[i].priceLevel - priceLevel) >= tolerance) continue;
+         if(g_virtualPending[i].leg == leg)
+            countSameLevel++;
+      }
+   }
+   else
+   {
+      const string legTag = "|" + VirtualGridLegCode(leg) + "|";
+      for(int i = 0; i < OrdersTotal(); i++)
+      {
+         const ulong ticket = OrderGetTicket(i);
+         if(ticket == 0 || !OrderIsOurSymbolAndMagic(ticket)) continue;
+         const string cmt = OrderGetString(ORDER_COMMENT);
+         if(!OrderCommentIsGridPending(cmt)) continue;
+         if(StringFind(cmt, legTag) < 0) continue;
+         if(MathAbs(OrderGetDouble(ORDER_PRICE_OPEN) - priceLevel) >= tolerance) continue;
          countSameLevel++;
+      }
    }
    for(int i = 0; i < PositionsTotal(); i++)
    {
@@ -4202,8 +4506,37 @@ void PlacePendingOrder(ENUM_ORDER_TYPE orderType, ENUM_VGRID_LEG leg, double pri
    double price = NormalizeDouble(priceLevel, dgt);
    double lot   = GetLotForVirtualGridLeg(leg, MathAbs(levelNum));
    double tp = ComputeVirtualTakeProfitPrice(orderType, leg, price, levelNum);
-   VirtualPendingAdd(MagicAA, orderType, leg, price, levelNum, tp, lot);
-   Print("VGridABCD: ", EnumToString(orderType), " at ", price, " lot ", lot, " (level ", levelNum > 0 ? "+" : "", levelNum, ")");
+   if(GridUsesVirtualPendingMode())
+   {
+      VirtualPendingAdd(MagicAA, orderType, leg, price, levelNum, tp, lot);
+      Print("VGridABCD: ", EnumToString(orderType), " at ", price, " lot ", lot, " (level ", levelNum > 0 ? "+" : "", levelNum, ")");
+      return;
+   }
+   string cmt = BuildOrderCommentWithLevel(leg, levelNum);
+   trade.SetExpertMagicNumber(MagicAA);
+   bool ok = false;
+   const double sl = 0.0;
+   switch(orderType)
+   {
+      case ORDER_TYPE_BUY_STOP:
+         ok = trade.BuyStop(lot, price, _Symbol, sl, tp, ORDER_TIME_GTC, 0, cmt);
+         break;
+      case ORDER_TYPE_BUY_LIMIT:
+         ok = trade.BuyLimit(lot, price, _Symbol, sl, tp, ORDER_TIME_GTC, 0, cmt);
+         break;
+      case ORDER_TYPE_SELL_STOP:
+         ok = trade.SellStop(lot, price, _Symbol, sl, tp, ORDER_TIME_GTC, 0, cmt);
+         break;
+      case ORDER_TYPE_SELL_LIMIT:
+         ok = trade.SellLimit(lot, price, _Symbol, sl, tp, ORDER_TIME_GTC, 0, cmt);
+         break;
+      default:
+         return;
+   }
+   if(ok)
+      Print("VGridABCD broker: ", EnumToString(orderType), " at ", price, " lot ", lot, " (level ", levelNum > 0 ? "+" : "", levelNum, ")");
+   else
+      Print("VGridABCD broker pending fail: ", EnumToString(orderType), " at ", price, " err ", GetLastError());
 }
 
 //+---------------------------------------------------------------
