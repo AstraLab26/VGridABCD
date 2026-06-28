@@ -23,7 +23,7 @@
 //| — Mọi quét vị thế/lệnh chờ/lịch sử: chỉ magic MagicNumber + _Symbol chart (không gộp magic khác). |
 //| — Lưới/lot/TP: theo input.                                        |
 //| — Thông báo/lịch: không đổi lưới/lot/ngưỡng.                      |
-//| — Carry: deal OUT âm → carry tổng; ngưỡng 6B1 = gốc+carry (1:1, không trần). |
+//| — Carry (EnableCompoundCarry): deal OUT âm → carry; ngưỡng 6B1 = gốc+carry; tắt = không cộng. |
 //+------------------------------------------------------------------+
 
 //--- Kiểu tăng lot theo bậc lưới: 0=Cố định mọi bậc; 1=Cộng thêm mỗi bậc; 2=Nhân mỗi bậc.
@@ -42,21 +42,19 @@ enum ENUM_VGRID_LEG
    VGRID_LEG_BUY_BELOW_H = 7   // Buy B — bậc âm (−)
 };
 
-// 6b: kiểu tính tiến độ ngưỡng gồng lãi tổng.
+// 6b: ngưỡng gồng lãi tổng — chỉ 2 chế độ (nhãn hiện trong dropdown input).
 enum ENUM_COMPOUND_TRIGGER_PROGRESS_MODE
 {
-   COMPOUND_PROGRESS_OPEN_SESSION_ONLY = 0,                 // Chỉ tổng lệnh mở trong phiên hiện tại
-   COMPOUND_PROGRESS_OPEN_PLUS_SESSION_CLOSED_NEGATIVE = 1, // Tổng lệnh mở phiên + phần đóng âm phiên + phần đóng TP phiên
-   COMPOUND_PROGRESS_OPEN_PLUS_SESSION_CLOSED_TOTAL = 2,    // Tổng lệnh mở phiên + toàn bộ lệnh đóng trong phiên (TP/SL/auto/tay)
-   COMPOUND_PROGRESS_OPEN_EXCLUDE_POSITIVE_EF = 3           // Chỉ tổng lệnh mở phiên, nhưng không cộng phần lãi dương của chân Buy B / Sell D
+   COMPOUND_PROGRESS_OPEN_SESSION_ONLY = 0,              // Ngưỡng tổng các lệnh đang mở trong phiên
+   COMPOUND_PROGRESS_OPEN_PLUS_SESSION_CLOSED_SL_TP = 1  // Ngưỡng tổng lệnh mở + lệnh đóng SL/TP trong phiên
 };
 
-input group "━━ 1) GRID ━━"
+input group "1) GRID —"
 input double GridDistancePips = 5000.0;         // Bước lưới D (pip) từ bậc 2+
 input double GridFirstLevelOffsetPips = 2500.0; // Khoảng cách bậc ±1 so với gốc (pip)
 input int MaxGridLevels = 80;                   // Số bậc mỗi phía
 
-input group "━━ 2) CHUNG (MAGIC / COMMENT) ━━"
+input group "2) CHUNG (MAGIC / COMMENT) —"
 input int MagicNumber = 2084750;                // Magic của EA VGridABCD
 input string CommentOrder = "VPGrid";           // Comment lệnh market
 
@@ -67,10 +65,10 @@ enum ENUM_GRID_PENDING_ENTRY_MODE
 };
 input ENUM_GRID_PENDING_ENTRY_MODE GridPendingEntryMode = GRID_PENDING_MODE_VIRTUAL; // Chế độ vào lệnh chờ
 
-input group "━━ 3) CHỜ ẢO A/B/C/D (mỗi chân: + và − gốc) ━━"
+input group "3) CHỜ ẢO A/B/C/D (mỗi chân: + và − gốc) —"
 
-input group "━━ 3a · Buy A (+/−) — lot / TP / Trading Stop ━━"
-input bool   EnableLegBuyA = true; // Bật/tắt chân Buy A (trên + dưới gốc)
+input group "3a - Buy A (+/−) — lot / TP / Trading Stop —"
+input bool   EnableLegBuyA = true;               // Bật/tắt chân Buy A (trên + dưới gốc)
 input double VGridL1BuyA = 0.01;
 input ENUM_LOT_SCALE VGridScaleBuyA = LOT_FIXED;
 input double VGridLotAddBuyA = 0.01;
@@ -79,11 +77,11 @@ input double VGridMaxLotBuyA = 1.0;
 input bool   VGridTpNextBuyA = false;
 input double VGridTpPipsBuyA = 0.0;
 input double VGridTradingStopTriggerPipsBuyA = 5000.0; // Trading Stop 3a: đạt lãi X pip thì kích hoạt (0 = tắt)
-input double VGridTradingStopLockPipsBuyA = 1000.0; // Trading Stop 3a: khi kích hoạt đặt SL dương +X1 pip từ giá mở
-input double VGridTradingStopStepPipsBuyA = 5000.0; // Trading Stop 3a: cứ đi thêm X pip thuận lợi thì dời SL thêm X pip
+input double VGridTradingStopLockPipsBuyA = 1000.0;    // Trading Stop 3a: khi kích hoạt đặt SL dương +X1 pip từ giá mở
+input double VGridTradingStopStepPipsBuyA = 5000.0;    // Trading Stop 3a: cứ đi thêm X pip thuận lợi thì dời SL thêm X pip
 
-input group "━━ 3b · Buy B (+/−) — lot / TP / Trading Stop ━━"
-input bool   EnableLegBuyB = true; // Bật/tắt chân Buy B (trên + dưới gốc)
+input group "3b - Buy B (+/−) — lot / TP / Trading Stop —"
+input bool   EnableLegBuyB = true;               // Bật/tắt chân Buy B (trên + dưới gốc)
 input double VGridL1BuyB = 0.01;
 input ENUM_LOT_SCALE VGridScaleBuyB = LOT_FIXED;
 input double VGridLotAddBuyB = 0.01;
@@ -92,11 +90,11 @@ input double VGridMaxLotBuyB = 1.0;
 input bool   VGridTpNextBuyB = true;
 input double VGridTpPipsBuyB = 0.0;
 input double VGridTradingStopTriggerPipsBuyB = 5000.0; // Trading Stop 3b: đạt lãi X pip thì kích hoạt (0 = tắt)
-input double VGridTradingStopLockPipsBuyB = 1000.0; // Trading Stop 3b: khi kích hoạt đặt SL dương +X1 pip từ giá mở
-input double VGridTradingStopStepPipsBuyB = 5000.0; // Trading Stop 3b: cứ đi thêm X pip thuận lợi thì dời SL thêm X pip
+input double VGridTradingStopLockPipsBuyB = 1000.0;    // Trading Stop 3b: khi kích hoạt đặt SL dương +X1 pip từ giá mở
+input double VGridTradingStopStepPipsBuyB = 5000.0;    // Trading Stop 3b: cứ đi thêm X pip thuận lợi thì dời SL thêm X pip
 
-input group "━━ 3c · Sell C (+/−) — lot / TP / Trading Stop ━━"
-input bool   EnableLegSellC = false; // Bật/tắt chân Sell C (trên + dưới gốc)
+input group "3c - Sell C (+/−) — lot / TP / Trading Stop —"
+input bool   EnableLegSellC = false;             // Bật/tắt chân Sell C (trên + dưới gốc)
 input double VGridL1SellC = 0.01;
 input ENUM_LOT_SCALE VGridScaleSellC = LOT_FIXED;
 input double VGridLotAddSellC = 0.01;
@@ -105,11 +103,11 @@ input double VGridMaxLotSellC = 1.0;
 input bool   VGridTpNextSellC = false;
 input double VGridTpPipsSellC = 0.0;
 input double VGridTradingStopTriggerPipsSellC = 0.0; // Trading Stop 3c: đạt lãi X pip thì kích hoạt (0 = tắt)
-input double VGridTradingStopLockPipsSellC = 0.0; // Trading Stop 3c: khi kích hoạt đặt SL dương +X1 pip từ giá mở
-input double VGridTradingStopStepPipsSellC = 0.0; // Trading Stop 3c: cứ đi thêm X pip thuận lợi thì dời SL thêm X pip
+input double VGridTradingStopLockPipsSellC = 0.0;  // Trading Stop 3c: khi kích hoạt đặt SL dương +X1 pip từ giá mở
+input double VGridTradingStopStepPipsSellC = 0.0;  // Trading Stop 3c: cứ đi thêm X pip thuận lợi thì dời SL thêm X pip
 
-input group "━━ 3d · Sell D (+/−) — lot / TP / Trading Stop ━━"
-input bool   EnableLegSellD = false; // Bật/tắt chân Sell D (trên + dưới gốc)
+input group "3d - Sell D (+/−) — lot / TP / Trading Stop —"
+input bool   EnableLegSellD = false;             // Bật/tắt chân Sell D (trên + dưới gốc)
 input double VGridL1SellD = 0.01;
 input ENUM_LOT_SCALE VGridScaleSellD = LOT_FIXED;
 input double VGridLotAddSellD = 0.01;
@@ -118,35 +116,43 @@ input double VGridMaxLotSellD = 1.0;
 input bool   VGridTpNextSellD = true;
 input double VGridTpPipsSellD = 0.0;
 input double VGridTradingStopTriggerPipsSellD = 0.0; // Trading Stop 3d: đạt lãi X pip thì kích hoạt (0 = tắt)
-input double VGridTradingStopLockPipsSellD = 0.0; // Trading Stop 3d: khi kích hoạt đặt SL dương +X1 pip từ giá mở
-input double VGridTradingStopStepPipsSellD = 0.0; // Trading Stop 3d: cứ đi thêm X pip thuận lợi thì dời SL thêm X pip
+input double VGridTradingStopLockPipsSellD = 0.0;  // Trading Stop 3d: khi kích hoạt đặt SL dương +X1 pip từ giá mở
+input double VGridTradingStopStepPipsSellD = 0.0;  // Trading Stop 3d: cứ đi thêm X pip thuận lợi thì dời SL thêm X pip
 
-input group "━━ 3Z · Auto lot đầu (float phiên âm) ━━"
+input group "3Z - Auto lot đầu (float phiên âm) —"
 input bool   EnableSessionFloatLossAutoFirstLot = false;  // Bật: float lệnh mở phiên ≤ −X USD → L1 chờ ảo = lot đầu (các bậc theo gấp thếp chân)
 input double SessionFloatLossAutoFirstLotThresholdUSD = 2000.0; // X USD chung (3Z): float phiên ≤ −X → kích hoạt auto lot / ngưỡng gồng (nếu bật)
 input double SessionFloatLossAutoFirstLotL1 = 0.02;    // Lot bậc 1 chờ ảo khi kích hoạt (lệnh market đang mở giữ nguyên lot)
 input bool   EnableSessionFloatLossCompoundTriggerAdjust = true; // Bật: float phiên ≤ −X → ngưỡng gốc gồng lãi tổng = ngưỡng mới (vẫn + carry)
 input double SessionFloatLossCompoundTriggerUSD = 500.0; // Ngưỡng gốc gồng lãi tổng (USD) khi kích hoạt 3Z; thực = gốc + carry
 
-input group "━━ 4) SL CHUNG LƯỚI (chân A/B/C/D) ━━"
-input bool   EnableGridCommonStopLoss = false; // Bật: SL chung Buy dưới gốc / Sell trên gốc (X pip); lỗ khi chạm SL → carry (từng deal đóng âm)
+input group "4) SL CHUNG LƯỚI (chân A/B/C/D) —"
+input bool   EnableGridCommonStopLoss = false; // Bật: SL chung Buy dưới gốc / Sell trên gốc (X pip); lỗ khi chạm SL → carry (nếu bật carry)
 input double GridCommonSlPipsFromBase = 3000.0; // X pip: Buy SL = gốc − X; Sell SL = gốc + X (một mức cho cả phía)
 
-input group "━━ 5) GỒNG LÃI TỔNG (6B1) ━━"
+input group "5) GỒNG LÃI TỔNG (6B1) —"
+input bool   EnableCompoundCarry = false; // Bật: deal OUT âm cộng carry → ngưỡng gồng = gốc + carry; tắt = không cộng carry
 input bool   EnableCompoundTotalFloatingProfit = false; // Bật gồng lãi tổng 6b1 (Stop)
-input ENUM_COMPOUND_TRIGGER_PROGRESS_MODE CompoundTriggerProgressMode = COMPOUND_PROGRESS_OPEN_PLUS_SESSION_CLOSED_TOTAL; // Kiểu tính tiến độ ngưỡng
-input double CompoundTotalProfitTriggerUSD = 300.0; // Ngưỡng gốc (USD); ngưỡng thực = gốc + toàn bộ carry tổng (1:1, cộng dồn không giới hạn)
+input ENUM_COMPOUND_TRIGGER_PROGRESS_MODE CompoundTriggerProgressMode = COMPOUND_PROGRESS_OPEN_PLUS_SESSION_CLOSED_SL_TP; // Chế độ ngưỡng gồng lãi tổng
+input double CompoundTotalProfitTriggerUSD = 300.0; // Ngưỡng gốc (USD); ngưỡng thực = gốc (+ carry nếu bật carry)
 input bool   CompoundResetOnCommonSlHit = true; // Chạm SL chung thì reset
 input bool   EnableCompoundSlPauseUntilNextServerDay = true; // Bật: gồng lãi tổng chạm SL chung → tạm dừng EA tới ngày server kế tiếp mới cho khởi động
 
-input group "━━ 6) RSI — khởi động EA ━━"
-input bool   EnableStartupRsiCrossUpFilter = false;      // Bật: chỉ đặt gốc + lệnh chờ khi RSI (nến đóng) cắt lên X1
+input group "6) RSI — khởi động EA —"
+input bool   EnableStartupRsiCrossUpFilter = false;      // Bật: chờ RSI cắt lên X1 và/hoặc cắt xuống X2 (nến đóng) rồi mới đặt gốc
 input ENUM_TIMEFRAMES StartupRsiTimeframe = PERIOD_M1;   // Khung RSI; PERIOD_CURRENT = khung chart
 input int    StartupRsiPeriod = 14;                      // Chu kỳ RSI
-input double StartupRsiCrossUpLevel = 70.0;              // X1: cắt lên (RSI shift1 > X1 và shift2 ≤ X1)
+input double StartupRsiCrossUpLevel = 70.0;              // X1 cắt lên (RSI shift1 > X1 và shift2 ≤ X1); 0 = không dùng
 input int    StartupRsiPreCrossUpBarsBelowX1 = 0;        // Trước cắt lên X1: X nến đóng liên tiếp RSI < X1; 0 = bỏ
+input double StartupRsiCrossDownLevel = 30.0;            // X2 cắt xuống (RSI shift1 < X2 và shift2 ≥ X2); 0 = không dùng
+input int    StartupRsiPreCrossDownBarsAboveX2 = 0;      // Trước cắt xuống X2: X nến đóng liên tiếp RSI > X2; 0 = bỏ
 
-input group "━━ 7) THÔNG BÁO ━━"
+input group "6b · EMA — lọc chiều lưới —"
+input bool   EnableEmaDirectionFilter = false; // Bật: khóa chiều Buy/Sell theo nến đóng vs EMA (đến khi EA reset)
+input ENUM_TIMEFRAMES EmaDirectionTimeframe = PERIOD_CURRENT; // Khung EMA; PERIOD_CURRENT = khung chart
+input int    EmaDirectionPeriod = 50;        // Chu kỳ EMA
+
+input group "7) THÔNG BÁO —"
 input bool EnableResetNotification = true;     // Gửi thông báo MT5
 input bool EnableTelegram = true;              // Gửi Telegram
 input bool TelegramDeletePreviousBotMessagesOnNotify = true; // Xóa tin bot cũ trước khi gửi tin mới
@@ -159,7 +165,7 @@ bool EnableTelegramStartupScreenshot = true;
 int  TelegramScreenshotWidth = 1280;
 int  TelegramScreenshotHeight = 720;
 
-input group "━━ 8) PANEL BIỂU ĐỒ ━━"
+input group "8) PANEL BIỂU ĐỒ —"
 input bool   EnableMonthlyProfitPanel = true;        // Hiện panel lợi nhuận tháng
 input bool   EnableBaseLineAndEaStartMarker = true;  // Hiện đường gốc + mốc thời gian bắt đầu EA
 
@@ -191,17 +197,16 @@ bool g_runtimeSessionActive = true;           // false: tạm dừng sau SL gồ
 bool g_compoundTotalProfitActive = false;     // Chế độ gồng lãi tổng (nhóm 6b): SL chung, không nạp chờ ảo, SL trượt
 bool g_compoundBuyBasketMode = false;         // true = giá Bid≥gốc: giữ BUY, SL chung buy; false = dưới gốc: giữ SELL
 double g_compoundCommonSlLine = 0.0;          // Giá SL chung (0 = chưa đặt bước đầu); Buy: SL dưới giá; Sell: SL trên giá
-bool g_compoundAfterClearWaitGrid = false;    // Sau kích hoạt: chờ thêm 1 bước lưới có lợi rồi SL tại ref + đóng phía ngược
-double g_compoundFrozenRefPx = 0.0;           // Tham chiếu khóa lúc kích hoạt (xóa chờ ảo)
-bool g_compoundActivationBuyBasket = false;   // Hướng bước lưới có lợi khi chờ (Bid≥gốc = buy basket)
-bool g_compoundArmed = false;                 // Đạt ngưỡng treo, chờ giá xác nhận (chưa đóng lệnh / chưa xóa chờ ảo)
-bool g_compoundArmBuyBasket = false;          // Hướng chờ khi armed (đồng nghĩa buyBasket khi xác nhận)
-bool g_compoundThresholdReached = false;      // true: tiến độ ≥ ngưỡng — không đặt thêm lệnh chờ
+bool g_compoundAfterClearWaitGrid = false;    // Đã khóa điểm A — chờ giá đi thêm 1 bước lưới rồi mới đặt SL chung
+double g_compoundFrozenRefPx = 0.0;           // Điểm A (mức lưới tham chiếu nhỏ nhất, phía đã chọn)
+bool g_compoundActivationBuyBasket = false; // (legacy, không dùng)
+bool g_compoundArmed = false;                 // (legacy, không dùng)
+bool g_compoundArmBuyBasket = false;          // (legacy, không dùng)
+bool g_compoundThresholdReached = false;      // (legacy, không dùng)
 double g_balanceCompoundCarryUsd = 0.0;       // Carry tổng (cộng dồn): mọi deal OUT âm sau gắn EA → +|lỗ|; ngưỡng 6B1 = gốc + carry (1:1, không trần)
+bool     g_compoundCommonSlCarrySuppress = false; // true: deal OUT SL âm từ SL chung gồng → không cộng carry
 double g_carryTotalUsdAtGridSessionStart = 0.0; // Mốc carry tại bắt đầu phiên lưới — chỉ hiển thị carry phiên / reset 6h; không trừ khỏi ngưỡng gồng
-double g_compoundSessionClosedNegativeProfitSwapUsd = 0.0; // 6b: Σ phần đóng âm (profit+swap) các deal OUT trong phiên hiện tại (magic+symbol), không commission
-double g_compoundSessionClosedTpProfitSwapUsd = 0.0;       // 6b: Σ(profit+swap) các deal OUT có DEAL_REASON_TP trong phiên hiện tại (magic+symbol), không commission
-double g_compoundSessionClosedTotalProfitSwapUsd = 0.0;    // 6b: Σ(profit+swap) toàn bộ deal OUT trong phiên hiện tại (magic+symbol), không commission
+double g_compoundSessionClosedSlTpProfitSwapUsd = 0.0; // 6b: Σ(profit+swap) deal OUT SL/TP trong phiên hiện tại (magic+symbol), không commission
 double g_gridCommonSlBuyLine = 0.0;            // SL chung mọi Buy: gốc − X pip
 double g_gridCommonSlSellLine = 0.0;           // SL chung mọi Sell: gốc + X pip
 string g_baseLineObjectName = "VGridABCD_BaseLine";
@@ -216,9 +221,11 @@ bool     g_isOnInitBootstrap = false;          // true trong lúc OnInit để t
 long     g_telegramNotifyMsgIds[];             // lưu message_id Telegram bot để tùy chọn xóa tin cũ
 long     g_compoundSlPauseDateKey = 0;         // ngày server khóa sau SL chung gồng lãi tổng (0 = không khóa)
 long     g_compoundSlPauseLoggedDateKey = 0;   // tránh log lặp khi đang khóa SL chung gồng
-int      g_startupRsiHandle = INVALID_HANDLE;  // iRSI chờ cắt lên X1 trước khi đặt gốc
-bool     g_startupRsiCrossLatch = false;       // đã thấy RSI cắt lên X1 → cho phép đặt gốc
+int      g_startupRsiHandle = INVALID_HANDLE;  // iRSI chờ tín hiệu khởi động trước khi đặt gốc
+bool     g_startupRsiCrossLatch = false;       // đã thấy RSI cắt lên X1 / cắt xuống X2 → cho phép đặt gốc
 datetime g_startupRsiLastCheckedBar1 = 0;    // nến đóng shift1 đã quét gần nhất
+int      g_emaDirectionHandle = INVALID_HANDLE; // iMA EMA lọc chiều lưới
+int      g_emaDirectionLock = 0;               // 0=chưa/chưa bật; +1=chỉ Buy; −1=chỉ Sell (khóa đến reset EA)
 bool     g_sessionFloatLossAutoFirstLotActive = false; // auto lot đầu chờ ảo đã kích hoạt trong phiên
 bool     g_sessionFloatLossCompoundTriggerActive = false; // ngưỡng gồng lãi tổng đã điều chỉnh trong phiên
 //--- Sau khi chờ ảo khớp market: chặn bổ sung lại chờ ảo cùng phía/mức cho tới khi vị thế hiện hoặc hết hạn
@@ -278,6 +285,14 @@ void StartupRsiReleaseHandle();
 bool StartupRsiInitHandle();
 bool StartupRsiPollCrossLatch(const bool forceRecheck);
 bool StartupRsiAllowsBasePlacement();
+void EmaDirectionClearLock();
+void EmaDirectionReleaseHandle();
+bool EmaDirectionInitHandle();
+void EmaDirectionSnapshotLockAtSessionStart();
+bool EmaDirectionTrySetLockFromClosedBar();
+void EmaDirectionPollLockIfNeeded();
+bool EmaDirectionAllowsLeg(const ENUM_VGRID_LEG leg);
+void EmaDirectionPurgeBlockedSidePendings();
 void SessionFloatLossAdjustReset();
 void SessionFloatLossAdjustPoll();
 double VirtualGridResolvedTradingStopTriggerPips(const ENUM_VGRID_LEG leg);
@@ -539,7 +554,7 @@ double OnePipPrice()
 //+------------------------------------------------------------------+
 bool GridCommonSlBlockedByCompoundMode()
 {
-   return (g_compoundTotalProfitActive || g_compoundArmed || g_compoundAfterClearWaitGrid);
+   return g_compoundTotalProfitActive;
 }
 
 double GridCommonSlMinStopDistance()
@@ -662,7 +677,8 @@ void CompoundModeClearState()
 //+------------------------------------------------------------------+
 bool CompoundBlocksNewPendingOrders()
 {
-   return (g_compoundTotalProfitActive || g_compoundArmed || g_compoundAfterClearWaitGrid || g_compoundThresholdReached);
+   // Chỉ chặn bổ sung chờ ảo sau khi đã đặt SL chung (bước 2)
+   return g_compoundTotalProfitActive;
 }
 
 //+------------------------------------------------------------------+
@@ -686,6 +702,8 @@ double GetCompoundFloatingTriggerThresholdUsd()
 //| Toàn bộ carry tổng cộng vào ngưỡng gồng 6B1 (1 USD lỗ đóng âm → +1 USD ngưỡng, không giới hạn). |
 double GetCompoundCarryContributionUsd()
 {
+   if(!EnableCompoundCarry)
+      return 0.0;
    return MathMax(0.0, g_balanceCompoundCarryUsd);
 }
 
@@ -699,10 +717,32 @@ void CompoundCarryUsdSetTotal(const double newTotalUsd)
 }
 
 //+------------------------------------------------------------------+
+//| Chạm SL chung gồng lãi tổng: deal OUT âm từ SL đó không cộng carry. |
+//+------------------------------------------------------------------+
+bool CompoundCarrySkipsDealOutFromCompoundCommonSl(const long dealReason, const double profitSwapUsd)
+{
+   if(profitSwapUsd >= -1e-12)
+      return false;
+
+   // Cửa sổ reset sau chạm SL chung (broker SL trễ / EA đóng còn lại): không cộng carry.
+   if(g_compoundCommonSlCarrySuppress)
+      return true;
+
+   // Đang gồng: lệnh khớp SL chung trên broker.
+   if(g_compoundTotalProfitActive
+      && (dealReason == DEAL_REASON_SL || dealReason == DEAL_REASON_SO))
+      return true;
+
+   return false;
+}
+
+//+------------------------------------------------------------------+
 //| Đóng âm: +|lỗ| vào carry (ngưỡng gồng 6B1 = gốc + carry).         |
 //+------------------------------------------------------------------+
 void CompoundCarryApplyFromDealOut(const double profitSwapUsd)
 {
+   if(!EnableCompoundCarry)
+      return;
    if(profitSwapUsd >= -1e-12)
       return;
    const double addUsd = -profitSwapUsd;
@@ -782,8 +822,12 @@ void CompoundFloatThrHudUpdate(const bool isEaGridReset)
       const double carryUsd = GetCompoundCarryContributionUsd();
       const double baseUsd = GetCompoundBaseTriggerUsd();
       line1 = "Ngưỡng gồng: " + DoubleToString(thrUsd, 2) + " " + AccountInfoString(ACCOUNT_CURRENCY)
-            + " (gốc " + DoubleToString(baseUsd, 2)
-            + " + carry " + DoubleToString(carryUsd, 2) + ")";
+            + " (gốc " + DoubleToString(baseUsd, 2);
+      if(EnableCompoundCarry)
+         line1 += " + carry " + DoubleToString(carryUsd, 2);
+      else
+         line1 += ", carry tắt";
+      line1 += ")";
       if(g_sessionFloatLossCompoundTriggerActive)
          line1 += " [3Z]";
    }
@@ -798,10 +842,14 @@ void CompoundFloatThrHudUpdate(const bool isEaGridReset)
    if(!g_runtimeSessionActive)
       line2 += "  |  Tạm dừng (SL gồng)";
 
-   string line3 = "Carry tổng → gồng (1:1, không trần): " + DoubleToString(g_balanceCompoundCarryUsd, 2)
-                    + " " + AccountInfoString(ACCOUNT_CURRENCY)
-                    + "  |  Carry phiên (chỉ hiển thị): " + DoubleToString(GetCarryInSessionUsd(), 2)
-                    + " " + AccountInfoString(ACCOUNT_CURRENCY);
+   string line3;
+   if(EnableCompoundCarry)
+      line3 = "Carry: BẬT (1:1, không trần) — tổng " + DoubleToString(g_balanceCompoundCarryUsd, 2)
+            + " " + AccountInfoString(ACCOUNT_CURRENCY)
+            + "  |  phiên " + DoubleToString(GetCarryInSessionUsd(), 2)
+            + " " + AccountInfoString(ACCOUNT_CURRENCY);
+   else
+      line3 = "Carry: TẮT — không cộng lỗ đóng vào ngưỡng gồng";
 
    if(!isEaGridReset && s_snapValid && line1 == s_snapL1 && line2 == s_snapL2 && line3 == s_snapL3)
       return;
@@ -816,92 +864,45 @@ void CompoundFloatThrHudUpdate(const bool isEaGridReset)
    ChartRedraw(0);
 }
 
-double GetCompoundOpenProfitSwapContribution(const ulong ticket)
-{
-   if(ticket <= 0 || !PositionSelectByTicket(ticket))
-      return 0.0;
-   if(!PositionIsOurSymbolAndMagic(ticket))
-      return 0.0;
-
-   const double posProfitSwap = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
-   if(CompoundTriggerProgressMode != COMPOUND_PROGRESS_OPEN_EXCLUDE_POSITIVE_EF)
-      return posProfitSwap;
-
-   const string cmt = PositionGetString(POSITION_COMMENT);
-   ENUM_VGRID_LEG leg = VGRID_LEG_BUY_ABOVE;
-   if(!TryParseLegFromOrderComment(cmt, leg))
-      return posProfitSwap;
-
-   if((leg == VGRID_LEG_BUY_ABOVE_E || leg == VGRID_LEG_BUY_BELOW_H
-       || leg == VGRID_LEG_SELL_ABOVE_G || leg == VGRID_LEG_SELL_BELOW_F) && posProfitSwap > 0.0)
-      return 0.0;
-   return posProfitSwap;
-}
-
 double GetCompoundTriggerProgressUsd(const double totalOpenProfitSwapUsd)
 {
-   if(CompoundTriggerProgressMode == COMPOUND_PROGRESS_OPEN_PLUS_SESSION_CLOSED_TOTAL)
-      return totalOpenProfitSwapUsd + g_compoundSessionClosedTotalProfitSwapUsd;
-   if(CompoundTriggerProgressMode == COMPOUND_PROGRESS_OPEN_PLUS_SESSION_CLOSED_NEGATIVE)
-      return totalOpenProfitSwapUsd + g_compoundSessionClosedNegativeProfitSwapUsd + g_compoundSessionClosedTpProfitSwapUsd;
+   if(CompoundTriggerProgressMode == COMPOUND_PROGRESS_OPEN_PLUS_SESSION_CLOSED_SL_TP)
+      return totalOpenProfitSwapUsd + g_compoundSessionClosedSlTpProfitSwapUsd;
    return totalOpenProfitSwapUsd;
 }
 
+
 //+------------------------------------------------------------------+
-//| Trên gốc (BUY): Bid vượt TRÊN ref → xóa chờ ảo.                    |
-//| Dưới gốc (SELL): Bid vượt XUỐNG DƯỚI ref → xóa chờ ảo.             |
+//| Tổng profit+swap dương của lệnh mở một phía (Buy hoặc Sell).      |
 //+------------------------------------------------------------------+
-void CompoundClearVirtualPendingsIfPriceAboveReference(const bool buyBasket, const double refPx)
+double CompoundSumPositiveOpenProfitForSide(const bool buySide)
 {
-   if(refPx <= 0.0 || !MathIsValidNumber(refPx))
-      return;
-   bool hasPending = false;
-   if(GridUsesVirtualPendingMode())
-      hasPending = (ArraySize(g_virtualPending) >= 1);
-   else
+   double sum = 0.0;
+   for(int i = 0; i < PositionsTotal(); i++)
    {
-      for(int i = 0; i < OrdersTotal(); i++)
-      {
-         const ulong t = OrderGetTicket(i);
-         if(t == 0 || !OrderIsOurSymbolAndMagic(t))
-            continue;
-         if(OrderCommentIsGridPending(OrderGetString(ORDER_COMMENT)))
-         {
-            hasPending = true;
-            break;
-         }
-      }
+      const ulong ticket = PositionGetTicket(i);
+      if(ticket == 0 || !PositionSelectByTicket(ticket))
+         continue;
+      if(!PositionIsOurSymbolAndMagic(ticket))
+         continue;
+      if(!CompoundPositionPassesSessionFilter(ticket))
+         continue;
+      const ENUM_POSITION_TYPE ptp = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+      if(buySide && ptp != POSITION_TYPE_BUY)
+         continue;
+      if(!buySide && ptp != POSITION_TYPE_SELL)
+         continue;
+      const double ps = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+      if(ps > 0.0)
+         sum += ps;
    }
-   if(!hasPending)
-      return;
-   const double pt = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-   const double tol = MathMax(GridPriceTolerance(), pt * 2.0);
-   const double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   bool doClear = false;
-   if(buyBasket)
-   {
-      if(bid > refPx + tol)
-         doClear = true;
-   }
-   else
-   {
-      if(bid < refPx - tol)
-         doClear = true;
-   }
-   if(!doClear)
-      return;
-   VirtualPendingClear();
-   if(buyBasket)
-      Print("VGridABCD: Gồng lãi — Bid trên tham chiếu ", DoubleToString(refPx, dgt), " → xóa chờ ảo.");
-   else
-      Print("VGridABCD: Gồng lãi — Bid dưới tham chiếu ", DoubleToString(refPx, dgt), " → xóa chờ ảo.");
+   return sum;
 }
 
 //+------------------------------------------------------------------+
-//| Điểm A: lệnh mở đúng phía, bậc dương nhỏ nhất (±1 gần gốc nhất); |
-//| hòa bậc → chọn giá gần Bid/Ask hiện tại nhất.                     |
+//| Điểm A: lệnh dương phía tham chiếu, |bậc| nhỏ nhất (± gốc đều được). |
 //+------------------------------------------------------------------+
-bool CompoundEvaluateDeferredBasket(const bool buyBasket, double &refPxOut)
+bool CompoundFindPointAForReferenceSide(const bool buyReference, double &refPxOut)
 {
    refPxOut = 0.0;
    if(basePrice <= 0.0)
@@ -909,8 +910,7 @@ bool CompoundEvaluateDeferredBasket(const bool buyBasket, double &refPxOut)
 
    const double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    const double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-   const double refPrice = buyBasket ? bid : ask;
-
+   const double refPrice = buyReference ? bid : ask;
    bool haveRef = false;
    int bestLevelAbs = 0;
    double bestDist = 0.0;
@@ -923,22 +923,18 @@ bool CompoundEvaluateDeferredBasket(const bool buyBasket, double &refPxOut)
       if(!CompoundPositionPassesSessionFilter(ticket))
          continue;
       const ENUM_POSITION_TYPE ptp = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
-      if(buyBasket && ptp != POSITION_TYPE_BUY)
+      if(buyReference && ptp != POSITION_TYPE_BUY)
          continue;
-      if(!buyBasket && ptp != POSITION_TYPE_SELL)
+      if(!buyReference && ptp != POSITION_TYPE_SELL)
+         continue;
+      const double ps = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+      if(ps <= 0.0)
          continue;
       const double op = PositionGetDouble(POSITION_PRICE_OPEN);
-      if(buyBasket && op <= basePrice)
-         continue;
-      if(!buyBasket && op >= basePrice)
-         continue;
-
       int signedLvl = 0;
       if(!FindSignedLevelNumForPrice(op, signedLvl))
          continue;
-      if(buyBasket && signedLvl <= 0)
-         continue;
-      if(!buyBasket && signedLvl >= 0)
+      if(signedLvl == 0)
          continue;
 
       const int levelAbs = MathAbs(signedLvl);
@@ -957,9 +953,33 @@ bool CompoundEvaluateDeferredBasket(const bool buyBasket, double &refPxOut)
 }
 
 //+------------------------------------------------------------------+
-//| Đặt SL theo mức line chung (ref) cho phía đang giữ trong 6b.      |
+//| Xóa chờ ảo/broker + gỡ TP mọi vị thế đang mở.                     |
 //+------------------------------------------------------------------+
-void CompoundApplyCommonSlLineToBasketPositions(const bool buyBasket, const double lineNorm, const double minDist)
+void CompoundClearPendingAndRemoveAllTp()
+{
+   VirtualPendingClear();
+   if(GridUsesBrokerPendingMode())
+      BrokerPendingClearAll();
+
+   trade.SetExpertMagicNumber(MagicAA);
+   for(int p = 0; p < PositionsTotal(); p++)
+   {
+      const ulong ticket = PositionGetTicket(p);
+      if(ticket == 0 || !PositionSelectByTicket(ticket))
+         continue;
+      if(!PositionIsOurSymbolAndMagic(ticket))
+         continue;
+      const double curSL = PositionGetDouble(POSITION_SL);
+      const double curTP = PositionGetDouble(POSITION_TP);
+      if(curTP > 0.0)
+         ModifyPositionSLTP(ticket, curSL, 0.0);
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Đặt SL chung tại lineNorm cho mọi vị thế mở (không TP).            |
+//+------------------------------------------------------------------+
+void CompoundApplyCommonSlLineToAllOpenPositions(const bool buyReference, const double lineNorm, const double minDist)
 {
    trade.SetExpertMagicNumber(MagicAA);
    const double pt = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
@@ -969,18 +989,16 @@ void CompoundApplyCommonSlLineToBasketPositions(const bool buyBasket, const doub
    for(int p = 0; p < PositionsTotal(); p++)
    {
       ulong ticket = PositionGetTicket(p);
+      if(ticket == 0 || !PositionSelectByTicket(ticket))
+         continue;
       if(!PositionIsOurSymbolAndMagic(ticket))
          continue;
       if(!CompoundPositionPassesSessionFilter(ticket))
          continue;
+
       const ENUM_POSITION_TYPE ptp = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
-      if(buyBasket && ptp != POSITION_TYPE_BUY)
-         continue;
-      if(!buyBasket && ptp != POSITION_TYPE_SELL)
-         continue;
       const double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
       const double curSL = PositionGetDouble(POSITION_SL);
-      const double curTP = PositionGetDouble(POSITION_TP);
       double newSL = 0.0;
 
       if(ptp == POSITION_TYPE_BUY)
@@ -994,7 +1012,7 @@ void CompoundApplyCommonSlLineToBasketPositions(const bool buyBasket, const doub
          if(curSL > 0.0 && newSL <= curSL + pt)
             continue;
       }
-      else
+      else if(ptp == POSITION_TYPE_SELL)
       {
          newSL = MathMin(lineNorm, openPrice - minDist);
          newSL = NormalizeDouble(newSL, dgt);
@@ -1005,34 +1023,99 @@ void CompoundApplyCommonSlLineToBasketPositions(const bool buyBasket, const doub
          if(curSL > 0.0 && newSL >= curSL - pt)
             continue;
       }
+      else
+         continue;
 
-      if(ModifyPositionSLTP(ticket, newSL, curTP))
-         Print("VGridABCD: Gồng lãi — SL tại điểm A ticket ", ticket, " SL=", DoubleToString(newSL, dgt));
+      if(ModifyPositionSLTP(ticket, newSL, 0.0))
+         Print("VGridABCD: Gồng lãi — SL chung ticket ", ticket, " SL=", DoubleToString(newSL, dgt));
    }
 }
 
 //+------------------------------------------------------------------+
-//| Đủ giá + đủ ngưỡng: xóa hết chờ ảo; chờ thêm 1 bước lưới có lợi.   |
+//| Ngưỡng X đạt: mỗi tick cập nhật phía tham chiếu + điểm A (không khóa một lần). |
 //+------------------------------------------------------------------+
-void CompoundOnActivationConfirmed(const bool buyBasket, const double refPx)
+void CompoundRefreshTrackingReference(const double compoundTriggerProgressUsd)
 {
-   // Carry tổng giữ nguyên trong pha chờ bước lưới — ngưỡng gồng vẫn = gốc + full carry.
-   VirtualPendingClear();
-   g_compoundFrozenRefPx = refPx;
-   g_compoundActivationBuyBasket = buyBasket;
+   if(g_compoundTotalProfitActive)
+      return;
+   if(!EnableCompoundTotalFloatingProfit || GetCompoundBaseTriggerUsd() <= 0.0)
+      return;
+   if(basePrice <= 0.0)
+      return;
+
+   const double thresholdUsd = GetCompoundFloatingTriggerThresholdUsd();
+   const bool thresholdOk = (compoundTriggerProgressUsd + 1e-8 >= thresholdUsd);
+
+   if(!thresholdOk)
+   {
+      if(g_compoundAfterClearWaitGrid)
+      {
+         g_compoundAfterClearWaitGrid = false;
+         g_compoundFrozenRefPx = 0.0;
+         Print("VGridABCD: Gồng lãi — tiến độ ", DoubleToString(compoundTriggerProgressUsd, 2),
+               " USD < ngưỡng ", DoubleToString(thresholdUsd, 2),
+               " USD → hủy chờ điểm A.");
+      }
+      return;
+   }
+
+   const double buyPosPl = CompoundSumPositiveOpenProfitForSide(true);
+   const double sellPosPl = CompoundSumPositiveOpenProfitForSide(false);
+   if(buyPosPl <= 0.0 && sellPosPl <= 0.0)
+   {
+      if(g_compoundAfterClearWaitGrid)
+      {
+         g_compoundAfterClearWaitGrid = false;
+         g_compoundFrozenRefPx = 0.0;
+         Print("VGridABCD: Gồng lãi — không còn lệnh mở dương → hủy chờ điểm A.");
+      }
+      return;
+   }
+
+   bool buyReference = (buyPosPl >= sellPosPl);
+   if(buyReference && buyPosPl <= 0.0)
+      buyReference = false;
+   if(!buyReference && sellPosPl <= 0.0)
+      return;
+
+   double pointA = 0.0;
+   if(!CompoundFindPointAForReferenceSide(buyReference, pointA))
+   {
+      if(g_compoundAfterClearWaitGrid)
+      {
+         g_compoundAfterClearWaitGrid = false;
+         g_compoundFrozenRefPx = 0.0;
+      }
+      return;
+   }
+
+   const bool wasWaiting = g_compoundAfterClearWaitGrid;
+   const bool sideChanged = wasWaiting && (g_compoundBuyBasketMode != buyReference);
+   const bool pointChanged = wasWaiting
+      && MathAbs(g_compoundFrozenRefPx - pointA) > GridPriceTolerance() * 0.5;
+
+   g_compoundBuyBasketMode = buyReference;
+   g_compoundFrozenRefPx = pointA;
    g_compoundAfterClearWaitGrid = true;
-   g_compoundArmed = false;
-   g_compoundTotalProfitActive = false;
    g_compoundCommonSlLine = 0.0;
-   Print("VGridABCD: Gồng lãi — KÍCH HOẠT: đã xóa hết chờ ảo. Tham chiếu=", DoubleToString(refPx, dgt),
-         " | Chờ +1 bước lưới có lợi → SL chung tại ref → đóng toàn bộ SELL nếu Bid≥gốc, toàn bộ BUY nếu Bid<gốc.");
+
+   if(!wasWaiting || sideChanged || pointChanged)
+   {
+      Print("VGridABCD: Gồng lãi — ngưỡng ", DoubleToString(thresholdUsd, 2), " USD OK",
+            " | phía=", (buyReference ? "Buy" : "Sell"),
+            " (P/L dương Buy=", DoubleToString(buyPosPl, 2),
+            " Sell=", DoubleToString(sellPosPl, 2), " USD)",
+            " | điểm A=", DoubleToString(pointA, dgt),
+            (sideChanged ? " [đổi phía]" : ""),
+            (pointChanged ? " [cập nhật A]" : ""),
+            " | chờ +1 bước lưới → SL tại A.");
+   }
 }
 
 //+------------------------------------------------------------------+
-//| Sau kích hoạt: giá đi thêm 1 bước lưới có lợi → SL tại A → đóng phía ngược. |
-//| Nếu giá hồi ngược 1 bước từ A trước khi vào SL chung → khôi phục chờ ảo. |
+//| Bước 2: giá đi thêm 1 bước lưới → SL tại A, xóa chờ + gỡ TP.       |
 //+------------------------------------------------------------------+
-void ProcessCompoundPostActivationGridStepWait(const double totalOpenProfitSwapUsd)
+void ProcessCompoundWaitingFirstGridStep()
 {
    if(!g_compoundAfterClearWaitGrid)
       return;
@@ -1049,53 +1132,8 @@ void ProcessCompoundPostActivationGridStepWait(const double totalOpenProfitSwapU
    const double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    const double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
 
-   // Nếu giá hồi ngược 1 bước từ điểm A trước khi vào SL chung:
-   // coi như chưa kích hoạt 6b, khôi phục lưới chờ ảo ban đầu.
-   if(g_compoundActivationBuyBasket)
-   {
-      if((g_compoundFrozenRefPx - bid) >= step - pt * 0.5)
-      {
-         g_compoundAfterClearWaitGrid = false;
-         g_compoundFrozenRefPx = 0.0;
-         Print("VGridABCD: Gồng lãi — giá hồi xuống dưới A 1 bước lưới trước khi vào SL chung → khôi phục chờ ảo.");
-         ManageGridOrders();
-         return;
-      }
-   }
-   else
-   {
-      if((ask - g_compoundFrozenRefPx) >= step - pt * 0.5)
-      {
-         g_compoundAfterClearWaitGrid = false;
-         g_compoundFrozenRefPx = 0.0;
-         Print("VGridABCD: Gồng lãi — giá hồi lên trên A 1 bước lưới trước khi vào SL chung → khôi phục chờ ảo.");
-         ManageGridOrders();
-         return;
-      }
-   }
-
-   const double modeTriggerUsd = GetCompoundBaseTriggerUsd();
-   const double modeThresholdUsd = GetCompoundFloatingTriggerThresholdUsd();
-   const double triggerProgressUsd = GetCompoundTriggerProgressUsd(totalOpenProfitSwapUsd);
-   if(modeTriggerUsd > 0.0 && triggerProgressUsd < modeThresholdUsd)
-   {
-      double distFromA = 0.0;
-      if(g_compoundActivationBuyBasket)
-         distFromA = MathAbs(bid - g_compoundFrozenRefPx);
-      else
-         distFromA = MathAbs(ask - g_compoundFrozenRefPx);
-      if(step > 0.0 && distFromA < step)
-      {
-         g_compoundAfterClearWaitGrid = false;
-         g_compoundFrozenRefPx = 0.0;
-         Print("VGridABCD: Gồng lãi — RESET điểm A khi chờ bước: (tiến độ + carry) < ngưỡng và giá cách A < 1 bước lưới.");
-         ManageGridOrders();
-         return;
-      }
-   }
-
    bool stepOk = false;
-   if(g_compoundActivationBuyBasket)
+   if(g_compoundBuyBasketMode)
       stepOk = ((bid - g_compoundFrozenRefPx) >= step - pt * 0.5);
    else
       stepOk = ((g_compoundFrozenRefPx - ask) >= step - pt * 0.5);
@@ -1103,210 +1141,33 @@ void ProcessCompoundPostActivationGridStepWait(const double totalOpenProfitSwapU
    if(!stepOk)
       return;
 
-   if(basePrice <= 0.0)
-   {
-      g_compoundAfterClearWaitGrid = false;
-      g_compoundFrozenRefPx = 0.0;
-      Print("VGridABCD: Gồng lãi — chờ bước lưới: base=0, hủy pha chờ.");
-      return;
-   }
-
    const int stopsLevel = (int)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
    const int freezeLevel = (int)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_FREEZE_LEVEL);
    double minDist = (double)MathMax(stopsLevel, freezeLevel) * pt;
    if(minDist < pt * 2.0)
       minDist = pt * 2.0;
 
-   const double lineNorm = NormalizeDouble(g_compoundFrozenRefPx, dgt);
-   g_compoundCommonSlLine = lineNorm;
-   CompoundApplyCommonSlLineToBasketPositions(g_compoundActivationBuyBasket, lineNorm, minDist);
+   CompoundClearPendingAndRemoveAllTp();
 
-   trade.SetExpertMagicNumber(MagicAA);
-   if(g_compoundActivationBuyBasket)
-   {
-      for(int j = PositionsTotal() - 1; j >= 0; j--)
-      {
-         ulong ticket = PositionGetTicket(j);
-         if(!PositionIsOurSymbolAndMagic(ticket))
-            continue;
-         if(!CompoundPositionPassesSessionFilter(ticket))
-            continue;
-         if((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE) != POSITION_TYPE_SELL)
-            continue;
-         trade.PositionClose(ticket);
-      }
-      Print("VGridABCD: Gồng lãi — BUY basket: đã đóng toàn bộ SELL (phiên).");
-   }
-   else
-   {
-      for(int j = PositionsTotal() - 1; j >= 0; j--)
-      {
-         ulong ticket = PositionGetTicket(j);
-         if(!PositionIsOurSymbolAndMagic(ticket))
-            continue;
-         if(!CompoundPositionPassesSessionFilter(ticket))
-            continue;
-         if((ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE) != POSITION_TYPE_BUY)
-            continue;
-         trade.PositionClose(ticket);
-      }
-      Print("VGridABCD: Gồng lãi — SELL basket: đã đóng toàn bộ BUY (phiên).");
-   }
+   g_compoundCommonSlLine = NormalizeDouble(g_compoundFrozenRefPx, dgt);
+   CompoundApplyCommonSlLineToAllOpenPositions(g_compoundBuyBasketMode, g_compoundCommonSlLine, minDist);
 
+   g_compoundAfterClearWaitGrid = false;
+   g_compoundTotalProfitActive = true;
    CompoundFloatThrHudUpdate(false);
 
-   g_compoundBuyBasketMode = g_compoundActivationBuyBasket;
-   g_compoundAfterClearWaitGrid = false;
-   g_compoundFrozenRefPx = 0.0;
-   g_compoundTotalProfitActive = true;
-
-   Print("VGridABCD: Gồng lãi tổng — SL chung tại tham chiếu, đóng phía xong → bật trượt SL theo bậc. Rổ ",
-         (g_compoundBuyBasketMode ? "BUY" : "SELL"), ".");
+   Print("VGridABCD: Gồng lãi — giá +1 bước lưới: SL chung tại A=",
+         DoubleToString(g_compoundCommonSlLine, dgt),
+         " | đã xóa chờ ảo + gỡ TP | không bổ sung chờ mới.");
 }
 
 //+------------------------------------------------------------------+
-//| Đạt ngưỡng Σ(profit+swap) lệnh mở: chỉ ARM — chưa đóng lệnh / chưa xóa chờ ảo. |
-//+------------------------------------------------------------------+
-void TryArmCompoundTotalProfitMode()
-{
-   if(g_compoundTotalProfitActive || g_compoundArmed || g_compoundAfterClearWaitGrid)
-      return;
-   if(GetCompoundBaseTriggerUsd() <= 0.0)
-      return;
-   if(basePrice <= 0.0)
-      return;
-
-   bool buyBasket = (SymbolInfoDouble(_Symbol, SYMBOL_BID) >= basePrice);
-   double refPx = 0.0;
-   const bool gotRef = CompoundEvaluateDeferredBasket(buyBasket, refPx);
-   if(!gotRef)
-   {
-      g_compoundFrozenRefPx = 0.0;
-      Print("VGridABCD: Gồng lãi tổng — không tìm được điểm A (bậc dương nhỏ nhất ",
-            (buyBasket ? "BUY trên gốc" : "SELL dưới gốc"), ") — không ARM.");
-      return;
-   }
-
-   g_compoundArmed = true;
-   g_compoundArmBuyBasket = buyBasket;
-   g_compoundFrozenRefPx = refPx;
-   const double step = CompoundModeGridStepPrice();
-   const double onePip = OnePipPrice();
-   const double carryContributionUsd = GetCompoundCarryContributionUsd();
-   string carryLog = "";
-   if(MathAbs(carryContributionUsd) > 1e-8)
-      carryLog = "; gốc " + DoubleToString(GetCompoundBaseTriggerUsd(), 2)
-                 + " + carry " + DoubleToString(carryContributionUsd, 2) + " (1:1, không trần)";
-   Print("VGridABCD: Gồng lãi tổng — ARM (chờ đủ giá + đủ ngưỡng). Điểm A=", DoubleToString(refPx, dgt),
-         " (bậc dương nhỏ nhất, gần giá nhất)",
-         " | 1 pip=", DoubleToString(onePip, dgt),
-         (step > 0.0 ? (" | bước lưới=" + DoubleToString(step, dgt)) : ""),
-         " | ngưỡng=", DoubleToString(GetCompoundFloatingTriggerThresholdUsd(), 2), " USD (",
-         (CompoundTriggerProgressMode == COMPOUND_PROGRESS_OPEN_PLUS_SESSION_CLOSED_TOTAL
-          ? "Σ mở phiên + Σ đóng toàn phiên"
-          : (CompoundTriggerProgressMode == COMPOUND_PROGRESS_OPEN_PLUS_SESSION_CLOSED_NEGATIVE
-             ? "Σ mở phiên + Σ đóng âm phiên + Σ đóng TP phiên"
-             : (CompoundTriggerProgressMode == COMPOUND_PROGRESS_OPEN_EXCLUDE_POSITIVE_EF
-                ? "Σ mở phiên (loại lãi dương chân Buy B / Sell D)"
-                : "Σ mở phiên"))),
-         carryLog,
-         ")",
-         (buyBasket ? " | Đủ giá: (Bid−ref)>1 pip; HỦY: Bid≤ref−1 pip." : " | Đủ giá: (ref−Ask)>1 pip; HỦY: Ask≥ref+1 pip."));
-}
-
-//+------------------------------------------------------------------+
-//| Đang ARM: đủ giá = Bid/Ask lệch tham chiếu > 1 pip; + Σ profit+swap mở phiên ≥ ngưỡng → execute. |
-//| totalOpenProfitSwapUsd = chỉ lệnh mở magic+symbol trong phiên hiện tại (lọc theo sessionStartTime). |
-//+------------------------------------------------------------------+
-void ProcessCompoundArming(const double totalOpenProfitSwapUsd)
-{
-   if(!g_compoundArmed)
-      return;
-
-   const double triggerUsd = GetCompoundBaseTriggerUsd();
-   bool buyBasket = g_compoundArmBuyBasket;
-   double refPx = 0.0;
-   const bool gotRef = CompoundEvaluateDeferredBasket(buyBasket, refPx);
-   if(!gotRef)
-   {
-      g_compoundArmed = false;
-      g_compoundFrozenRefPx = 0.0;
-      Print("VGridABCD: Gồng lãi tổng — mất điểm A khi chờ — HỦY ARM (không đóng lệnh).");
-      return;
-   }
-   g_compoundArmBuyBasket = buyBasket;
-   g_compoundFrozenRefPx = refPx;
-
-   const double onePip = OnePipPrice();
-   if(onePip <= 0.0)
-      return;
-   const double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   const double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-   const double compoundFloatThr = GetCompoundFloatingTriggerThresholdUsd();
-   const double triggerProgressUsd = GetCompoundTriggerProgressUsd(totalOpenProfitSwapUsd);
-   const bool floatOk = (triggerUsd > 0.0 && triggerProgressUsd >= compoundFloatThr);
-   const double step = CompoundModeGridStepPrice();
-   if(triggerUsd > 0.0 && triggerProgressUsd < compoundFloatThr)
-   {
-      double distFromA = 0.0;
-      if(buyBasket)
-         distFromA = MathAbs(bid - refPx);
-      else
-         distFromA = MathAbs(ask - refPx);
-      if(step > 0.0 && distFromA < step)
-      {
-         g_compoundArmed = false;
-         g_compoundFrozenRefPx = 0.0;
-         Print("VGridABCD: Gồng lãi tổng — RESET điểm A: (tiến độ + carry) < ngưỡng và giá cách A < 1 bước lưới.");
-         return;
-      }
-   }
-
-   if(buyBasket)
-   {
-      // Đủ giá: (Bid − tham chiếu) > 1 pip.
-      if((bid - refPx) > onePip)
-      {
-         if(!floatOk)
-            return;
-         g_compoundArmed = false;
-         CompoundOnActivationConfirmed(true, refPx);
-         return;
-      }
-      // Hủy đối xứng: Bid nằm từ tham chiếu trở xuống quá 1 pip.
-      if(bid <= refPx - onePip)
-      {
-         g_compoundArmed = false;
-         Print("VGridABCD: Gồng lãi tổng — HỦY ARM: Bid ≤ tham chiếu − 1 pip — không đóng lệnh, không xóa chờ ảo.");
-         return;
-      }
-   }
-   else
-   {
-      // Rổ SELL: đủ giá = (tham chiếu − Ask) > 1 pip.
-      if((refPx - ask) > onePip)
-      {
-         if(!floatOk)
-            return;
-         g_compoundArmed = false;
-         CompoundOnActivationConfirmed(false, refPx);
-         return;
-      }
-      if(ask >= refPx + onePip)
-      {
-         g_compoundArmed = false;
-         Print("VGridABCD: Gồng lãi tổng — HỦY ARM: Ask ≥ tham chiếu + 1 pip — không đóng lệnh, không xóa chờ ảo.");
-         return;
-      }
-   }
-}
-
-//+------------------------------------------------------------------+
-//| Chạm SL chung (gồng lãi tổng đã kích hoạt): reset phiên + carry = 0. |
+//| Chạm SL chung: reset EA + reset carry.                              |
 //+------------------------------------------------------------------+
 void CompoundResetAfterCommonSlHit()
 {
    const double carryBeforeReset = g_balanceCompoundCarryUsd;
+   g_compoundCommonSlCarrySuppress = true;
    CloseAllPositionsAndOrders();
    CompoundCarryUsdSetTotal(0.0);
    CompoundModeClearState();
@@ -1316,6 +1177,7 @@ void CompoundResetAfterCommonSlHit()
    ArrayResize(gridLevels, 0);
    sessionStartTime = 0;
    basePrice = 0.0;
+   EmaDirectionClearLock();
    StartupRsiCrossResetLatch();
 
    if(EnableCompoundSlPauseUntilNextServerDay)
@@ -1325,27 +1187,24 @@ void CompoundResetAfterCommonSlHit()
       g_compoundSlPauseDateKey = nowDateKey;
       g_compoundSlPauseLoggedDateKey = nowDateKey;
       g_runtimeSessionActive = false;
-      const string msg = "Gồng lãi tổng chạm SL chung — reset carry "
+      const string msg = "Gồng lãi chạm SL chung — reset EA + carry "
                          + DoubleToString(carryBeforeReset, 2)
-                         + " → 0 | tạm dừng EA tới ngày server kế tiếp mới cho khởi động.";
+                         + " → 0 | tạm dừng EA tới ngày server kế tiếp.";
       Print("VGridABCD: ", msg);
       if(EnableResetNotification)
          SendResetNotification(msg);
-      CompoundFloatThrHudUpdate(false);
       return;
    }
 
    g_runtimeSessionActive = true;
-   Print("VGridABCD: Gồng lãi — chạm SL chung — reset carry ", DoubleToString(carryBeforeReset, 2),
-         " → 0 | chờ đặt gốc mới.");
+   Print("VGridABCD: Gồng lãi — chạm SL chung — reset EA + carry ",
+         DoubleToString(carryBeforeReset, 2), " → 0 | chờ đặt gốc mới.");
    if(EnableResetNotification)
-      SendResetNotification("Gồng lãi: SL chung — reset carry, chờ đặt gốc");
-   CompoundFloatThrHudUpdate(false);
+      SendResetNotification("Gồng lãi: SL chung — reset EA + carry");
 }
 
 //+------------------------------------------------------------------+
-//| SL chung BUY: mức = điểm A + (k-1)*bước với k=floor((Bid−A)/step), k≥1. |
-//| A = bậc dương nhỏ nhất (±1). Ví dụ A=1300, step=100: Bid≥1400 → SL=1300. |
+//| Bước 3–4: trượt SL chung theo bậc lưới; chạm SL → reset EA+carry.  |
 //+------------------------------------------------------------------+
 void ProcessCompoundTotalProfitTrailing()
 {
@@ -1353,7 +1212,7 @@ void ProcessCompoundTotalProfitTrailing()
       return;
 
    const double step = CompoundModeGridStepPrice();
-   if(step <= 0.0)
+   if(step <= 0.0 || g_compoundFrozenRefPx <= 0.0)
       return;
 
    const double pt = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
@@ -1365,59 +1224,54 @@ void ProcessCompoundTotalProfitTrailing()
    const double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    const double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    const double touchTol = MathMax(GridPriceTolerance(), pt * 3.0);
+   const double pointA = g_compoundFrozenRefPx;
    const double prevCommonSlLine = g_compoundCommonSlLine;
 
-   double pointA = 0.0;
-   bool havePointA = false;
-   int managed = 0;
-
+   int openManaged = 0;
    for(int i = 0; i < PositionsTotal(); i++)
    {
-      ulong ticket = PositionGetTicket(i);
+      const ulong ticket = PositionGetTicket(i);
+      if(ticket == 0 || !PositionSelectByTicket(ticket))
+         continue;
       if(!PositionIsOurSymbolAndMagic(ticket))
          continue;
       if(!CompoundPositionPassesSessionFilter(ticket))
          continue;
-      const ENUM_POSITION_TYPE ptp = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
-      const double op = PositionGetDouble(POSITION_PRICE_OPEN);
-      if(g_compoundBuyBasketMode)
-      {
-         if(ptp != POSITION_TYPE_BUY)
-            continue;
-         if(op <= basePrice)
-            continue;
-         managed++;
-      }
-      else
-      {
-         if(ptp != POSITION_TYPE_SELL)
-            continue;
-         if(op >= basePrice)
-            continue;
-         managed++;
-      }
+      openManaged++;
    }
-
-   havePointA = CompoundEvaluateDeferredBasket(g_compoundBuyBasketMode, pointA);
-
-   if(managed == 0 || !havePointA)
+   if(openManaged == 0)
    {
       CompoundModeClearState();
-      Print("VGridABCD: Gồng lãi tổng — hết vị thế quản lý, TẮT chế độ.");
+      Print("VGridABCD: Gồng lãi — hết vị thế mở, TẮT chế độ.");
       ManageGridOrders();
       return;
    }
 
-   CompoundClearVirtualPendingsIfPriceAboveReference(g_compoundBuyBasketMode, pointA);
+   if(g_compoundBuyBasketMode)
+   {
+      const int k = (int)MathFloor((bid - pointA) / step + 1e-8);
+      if(k >= 1)
+         g_compoundCommonSlLine = NormalizeDouble(pointA + (double)(k - 1) * step, dgt);
+   }
+   else
+   {
+      const int k = (int)MathFloor((pointA - ask) / step + 1e-8);
+      if(k >= 1)
+         g_compoundCommonSlLine = NormalizeDouble(pointA - (double)(k - 1) * step, dgt);
+   }
 
-   const bool resetOnCommonSl = CompoundResetOnCommonSlHit;
-   if(resetOnCommonSl && g_compoundCommonSlLine > 0.0)
+   if(g_compoundCommonSlLine <= 0.0)
+      return;
+
+   if(CompoundResetOnCommonSlHit)
    {
       if(g_compoundBuyBasketMode)
       {
          if(bid <= g_compoundCommonSlLine + touchTol)
          {
-            Print("VGridABCD: Gồng lãi — Bid chạm SL chung ", DoubleToString(g_compoundCommonSlLine, dgt), " → reset EA, chờ đặt gốc.");
+            g_compoundCommonSlCarrySuppress = true;
+            Print("VGridABCD: Gồng lãi — Bid chạm SL chung ",
+                  DoubleToString(g_compoundCommonSlLine, dgt), " → reset EA + carry.");
             CompoundResetAfterCommonSlHit();
             return;
          }
@@ -1426,115 +1280,22 @@ void ProcessCompoundTotalProfitTrailing()
       {
          if(ask >= g_compoundCommonSlLine - touchTol)
          {
-            Print("VGridABCD: Gồng lãi — Ask chạm SL chung ", DoubleToString(g_compoundCommonSlLine, dgt), " → reset EA, chờ đặt gốc.");
+            g_compoundCommonSlCarrySuppress = true;
+            Print("VGridABCD: Gồng lãi — Ask chạm SL chung ",
+                  DoubleToString(g_compoundCommonSlLine, dgt), " → reset EA + carry.");
             CompoundResetAfterCommonSlHit();
             return;
          }
       }
    }
 
-   if(g_compoundBuyBasketMode)
-   {
-      if(bid >= pointA + step - pt * 0.5)
-      {
-         const int k = (int)MathFloor((bid - pointA) / step + 1e-8);
-         if(k >= 1)
-         {
-            const double candidate = NormalizeDouble(pointA + (double)(k - 1) * step, dgt);
-            if(candidate > 0.0)
-            {
-               if(g_compoundCommonSlLine <= 0.0)
-                  g_compoundCommonSlLine = candidate;
-               else
-                  g_compoundCommonSlLine = MathMax(g_compoundCommonSlLine, candidate);
-            }
-         }
-      }
-   }
-   else
-   {
-      if(ask <= pointA - step + pt * 0.5)
-      {
-         const int k = (int)MathFloor((pointA - ask) / step + 1e-8);
-         if(k >= 1)
-         {
-            const double candidate = NormalizeDouble(pointA - (double)(k - 1) * step, dgt);
-            if(candidate > 0.0)
-            {
-               if(g_compoundCommonSlLine <= 0.0)
-                  g_compoundCommonSlLine = candidate;
-               else
-                  g_compoundCommonSlLine = MathMin(g_compoundCommonSlLine, candidate);
-            }
-         }
-      }
-   }
-
-   if(g_compoundCommonSlLine <= 0.0)
-      return;
-
    if(prevCommonSlLine > 0.0 && MathAbs(g_compoundCommonSlLine - prevCommonSlLine) >= step - pt * 0.5)
    {
-      const int movedSteps = (int)MathRound(MathAbs(g_compoundCommonSlLine - prevCommonSlLine) / step);
-      Print("VGridABCD: Gồng lãi — SL chung dịch theo hướng có lợi ",
-            IntegerToString(MathMax(1, movedSteps)), " bước lưới -> ",
-            DoubleToString(g_compoundCommonSlLine, dgt));
-   }
-   else if(prevCommonSlLine <= 0.0 && g_compoundCommonSlLine > 0.0)
-   {
-      Print("VGridABCD: Gồng lãi — SL chung khởi tạo tại ",
+      Print("VGridABCD: Gồng lãi — nâng SL chung lên 1 bước lưới → ",
             DoubleToString(g_compoundCommonSlLine, dgt));
    }
 
-   for(int p = 0; p < PositionsTotal(); p++)
-   {
-      ulong ticket = PositionGetTicket(p);
-      if(!PositionIsOurSymbolAndMagic(ticket))
-         continue;
-      if(!CompoundPositionPassesSessionFilter(ticket))
-         continue;
-      const ENUM_POSITION_TYPE ptp = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
-      if(g_compoundBuyBasketMode && ptp != POSITION_TYPE_BUY)
-         continue;
-      if(!g_compoundBuyBasketMode && ptp != POSITION_TYPE_SELL)
-         continue;
-
-      const double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
-      if(g_compoundBuyBasketMode && openPrice <= basePrice)
-         continue;
-      if(!g_compoundBuyBasketMode && openPrice >= basePrice)
-         continue;
-
-      const double curSL = PositionGetDouble(POSITION_SL);
-      const double curTP = PositionGetDouble(POSITION_TP);
-      double newSL = 0.0;
-
-      if(g_compoundBuyBasketMode)
-      {
-         newSL = MathMax(g_compoundCommonSlLine, openPrice + minDist);
-         newSL = NormalizeDouble(newSL, dgt);
-         if(newSL <= 0.0 || newSL >= bid - minDist)
-            continue;
-         if(newSL <= openPrice)
-            continue;
-         if(curSL > 0.0 && newSL <= curSL + pt)
-            continue;
-      }
-      else
-      {
-         newSL = MathMin(g_compoundCommonSlLine, openPrice - minDist);
-         newSL = NormalizeDouble(newSL, dgt);
-         if(newSL <= 0.0 || newSL <= ask + minDist)
-            continue;
-         if(newSL >= openPrice)
-            continue;
-         if(curSL > 0.0 && newSL >= curSL - pt)
-            continue;
-      }
-
-      if(ModifyPositionSLTP(ticket, newSL, curTP))
-         Print("VGridABCD: Gồng lãi — SL chung ticket ", ticket, " SL=", DoubleToString(newSL, dgt));
-   }
+   CompoundApplyCommonSlLineToAllOpenPositions(g_compoundBuyBasketMode, g_compoundCommonSlLine, minDist);
 }
 
 //+------------------------------------------------------------------+
@@ -1718,8 +1479,37 @@ double GridPriceTolerance()
 
 
 //+------------------------------------------------------------------+
-//| RSI khởi động: chỉ cắt lên X1 (nến đóng shift1 vs shift2).        |
+//| RSI khởi động: cắt lên X1 và/hoặc cắt xuống X2 (X=0 → bỏ qua).   |
 //+------------------------------------------------------------------+
+bool StartupRsiCrossUpEnabled()
+{
+   return (StartupRsiCrossUpLevel > 0.0);
+}
+
+bool StartupRsiCrossDownEnabled()
+{
+   return (StartupRsiCrossDownLevel > 0.0);
+}
+
+bool StartupRsiFilterActive()
+{
+   return (EnableStartupRsiCrossUpFilter
+           && (StartupRsiCrossUpEnabled() || StartupRsiCrossDownEnabled()));
+}
+
+string StartupRsiConfigLabel()
+{
+   const bool up = StartupRsiCrossUpEnabled();
+   const bool dn = StartupRsiCrossDownEnabled();
+   if(up && dn)
+      return "cắt lên X1 hoặc cắt xuống X2";
+   if(up)
+      return "cắt lên X1";
+   if(dn)
+      return "cắt xuống X2";
+   return "tắt (X1=0 và X2=0)";
+}
+
 ENUM_TIMEFRAMES StartupRsiResolvedTimeframe()
 {
    ENUM_TIMEFRAMES tf = StartupRsiTimeframe;
@@ -1736,7 +1526,7 @@ void StartupRsiCrossResetLatch()
 
 bool StartupRsiAllowsBasePlacement()
 {
-   if(!EnableStartupRsiCrossUpFilter)
+   if(!StartupRsiFilterActive())
       return true;
    return g_startupRsiCrossLatch;
 }
@@ -1753,7 +1543,7 @@ void StartupRsiReleaseHandle()
 bool StartupRsiInitHandle()
 {
    StartupRsiReleaseHandle();
-   if(!EnableStartupRsiCrossUpFilter)
+   if(!StartupRsiFilterActive())
       return true;
    const ENUM_TIMEFRAMES tf = StartupRsiResolvedTimeframe();
    const int period = MathMax(2, StartupRsiPeriod);
@@ -1786,9 +1576,29 @@ bool StartupRsiPreCrossUpBarsMeetCondition(const int barCount, const double x1)
    return true;
 }
 
+bool StartupRsiPreCrossDownBarsMeetCondition(const int barCount, const double x2)
+{
+   if(barCount <= 0)
+      return true;
+
+   double rsiPre[];
+   ArraySetAsSeries(rsiPre, true);
+   if(CopyBuffer(g_startupRsiHandle, 0, 2, barCount, rsiPre) < barCount)
+      return false;
+
+   for(int i = 0; i < barCount; i++)
+   {
+      if(!MathIsValidNumber(rsiPre[i]))
+         return false;
+      if(rsiPre[i] <= x2 + 1e-8)
+         return false;
+   }
+   return true;
+}
+
 bool StartupRsiPollCrossLatch(const bool forceRecheck)
 {
-   if(!EnableStartupRsiCrossUpFilter)
+   if(!StartupRsiFilterActive())
       return true;
    if(g_startupRsiCrossLatch)
       return true;
@@ -1796,8 +1606,11 @@ bool StartupRsiPollCrossLatch(const bool forceRecheck)
       return false;
 
    const ENUM_TIMEFRAMES tf = StartupRsiResolvedTimeframe();
-   const int x3 = MathMax(0, StartupRsiPreCrossUpBarsBelowX1);
-   const int minBars = 3 + x3;
+   const int preUp = StartupRsiCrossUpEnabled()
+      ? MathMax(0, StartupRsiPreCrossUpBarsBelowX1) : 0;
+   const int preDn = StartupRsiCrossDownEnabled()
+      ? MathMax(0, StartupRsiPreCrossDownBarsAboveX2) : 0;
+   const int minBars = 3 + MathMax(preUp, preDn);
    if(Bars(_Symbol, tf) < minBars)
       return false;
 
@@ -1814,25 +1627,212 @@ bool StartupRsiPollCrossLatch(const bool forceRecheck)
    if(!MathIsValidNumber(rsiBuf[0]) || !MathIsValidNumber(rsiBuf[1]))
       return false;
 
-   const double x1 = StartupRsiCrossUpLevel;
-   const bool crossUp = (rsiBuf[0] > x1 && rsiBuf[1] <= x1);
-   if(!crossUp)
-      return false;
-   if(!StartupRsiPreCrossUpBarsMeetCondition(x3, x1))
+   bool crossUp = false;
+   bool crossDown = false;
+
+   if(StartupRsiCrossUpEnabled())
+   {
+      const double x1 = StartupRsiCrossUpLevel;
+      crossUp = (rsiBuf[0] > x1 && rsiBuf[1] <= x1);
+      if(crossUp && !StartupRsiPreCrossUpBarsMeetCondition(preUp, x1))
+         crossUp = false;
+      if(crossUp)
+      {
+         string preNote = "";
+         if(preUp > 0)
+            preNote = " | trước cắt: " + IntegerToString(preUp) + " nến RSI < " + DoubleToString(x1, 2);
+         Print("VGridABCD: RSI khởi động — cắt lên X1 trên ", EnumToString(tf),
+               " | RSI[1]=", DoubleToString(rsiBuf[0], 2),
+               " RSI[2]=", DoubleToString(rsiBuf[1], 2),
+               " | X1=", DoubleToString(x1, 2), preNote);
+      }
+   }
+
+   if(StartupRsiCrossDownEnabled())
+   {
+      const double x2 = StartupRsiCrossDownLevel;
+      crossDown = (rsiBuf[0] < x2 && rsiBuf[1] >= x2);
+      if(crossDown && !StartupRsiPreCrossDownBarsMeetCondition(preDn, x2))
+         crossDown = false;
+      if(crossDown)
+      {
+         string preNote = "";
+         if(preDn > 0)
+            preNote = " | trước cắt: " + IntegerToString(preDn) + " nến RSI > " + DoubleToString(x2, 2);
+         Print("VGridABCD: RSI khởi động — cắt xuống X2 trên ", EnumToString(tf),
+               " | RSI[1]=", DoubleToString(rsiBuf[0], 2),
+               " RSI[2]=", DoubleToString(rsiBuf[1], 2),
+               " | X2=", DoubleToString(x2, 2), preNote);
+      }
+   }
+
+   if(!crossUp && !crossDown)
       return false;
 
    g_startupRsiLastCheckedBar1 = bar1;
    g_startupRsiCrossLatch = true;
-
-   string preNote = "";
-   if(x3 > 0)
-      preNote = " | trước cắt: " + IntegerToString(x3) + " nến RSI < " + DoubleToString(x1, 2);
-
-   Print("VGridABCD: RSI khởi động — cắt lên X1 trên ", EnumToString(tf),
-         " | RSI[1]=", DoubleToString(rsiBuf[0], 2),
-         " RSI[2]=", DoubleToString(rsiBuf[1], 2),
-         " | X1=", DoubleToString(x1, 2), preNote);
    return true;
+}
+
+//+------------------------------------------------------------------+
+//| EMA lọc chiều: nến đóng trên EMA → chỉ Buy; dưới EMA → chỉ Sell.   |
+//| Khóa chiều lúc bắt đầu phiên lưới — không đổi cho đến khi EA reset. |
+//+------------------------------------------------------------------+
+ENUM_TIMEFRAMES EmaDirectionResolvedTimeframe()
+{
+   ENUM_TIMEFRAMES tf = EmaDirectionTimeframe;
+   if(tf == PERIOD_CURRENT)
+      tf = (ENUM_TIMEFRAMES)_Period;
+   return tf;
+}
+
+void EmaDirectionClearLock()
+{
+   g_emaDirectionLock = 0;
+}
+
+void EmaDirectionReleaseHandle()
+{
+   if(g_emaDirectionHandle != INVALID_HANDLE)
+   {
+      IndicatorRelease(g_emaDirectionHandle);
+      g_emaDirectionHandle = INVALID_HANDLE;
+   }
+}
+
+bool EmaDirectionInitHandle()
+{
+   EmaDirectionReleaseHandle();
+   if(!EnableEmaDirectionFilter)
+      return true;
+   const ENUM_TIMEFRAMES tf = EmaDirectionResolvedTimeframe();
+   const int period = MathMax(1, EmaDirectionPeriod);
+   g_emaDirectionHandle = iMA(_Symbol, tf, period, 0, MODE_EMA, PRICE_CLOSE);
+   if(g_emaDirectionHandle == INVALID_HANDLE)
+   {
+      Print("VGridABCD: EMA lọc chiều — không tạo iMA (", EnumToString(tf), ", period=", period, ").");
+      return false;
+   }
+   return true;
+}
+
+bool EmaDirectionTrySetLockFromClosedBar()
+{
+   if(!EnableEmaDirectionFilter)
+      return true;
+   if(g_emaDirectionLock != 0)
+      return true;
+   if(g_emaDirectionHandle == INVALID_HANDLE && !EmaDirectionInitHandle())
+      return false;
+
+   const ENUM_TIMEFRAMES tf = EmaDirectionResolvedTimeframe();
+   const int period = MathMax(1, EmaDirectionPeriod);
+   if(Bars(_Symbol, tf) < period + 2)
+      return false;
+   if(BarsCalculated(g_emaDirectionHandle) < period + 2)
+      return false;
+
+   double closeBuf[];
+   double emaBuf[];
+   ArraySetAsSeries(closeBuf, true);
+   ArraySetAsSeries(emaBuf, true);
+   if(CopyClose(_Symbol, tf, 1, 1, closeBuf) < 1)
+      return false;
+   if(CopyBuffer(g_emaDirectionHandle, 0, 1, 1, emaBuf) < 1)
+      return false;
+   if(!MathIsValidNumber(closeBuf[0]) || !MathIsValidNumber(emaBuf[0]))
+      return false;
+
+   if(closeBuf[0] >= emaBuf[0])
+      g_emaDirectionLock = 1;
+   else
+      g_emaDirectionLock = -1;
+
+   Print("VGridABCD: EMA lọc chiều — khóa phiên ",
+         (g_emaDirectionLock > 0 ? "chỉ Buy" : "chỉ Sell"),
+         " | ", EnumToString(tf), " period=", period,
+         " | Close[1]=", DoubleToString(closeBuf[0], dgt),
+         " EMA[1]=", DoubleToString(emaBuf[0], dgt),
+         " (giữ đến khi EA reset)");
+   return true;
+}
+
+void EmaDirectionSnapshotLockAtSessionStart()
+{
+   g_emaDirectionLock = 0;
+   if(!EnableEmaDirectionFilter)
+      return;
+   EmaDirectionTrySetLockFromClosedBar();
+}
+
+void EmaDirectionPollLockIfNeeded()
+{
+   if(!EnableEmaDirectionFilter || g_emaDirectionLock != 0)
+      return;
+   EmaDirectionTrySetLockFromClosedBar();
+}
+
+bool EmaDirectionAllowsBuyEntries()
+{
+   if(!EnableEmaDirectionFilter)
+      return true;
+   if(g_emaDirectionLock == 0)
+      return false;
+   return (g_emaDirectionLock > 0);
+}
+
+bool EmaDirectionAllowsSellEntries()
+{
+   if(!EnableEmaDirectionFilter)
+      return true;
+   if(g_emaDirectionLock == 0)
+      return false;
+   return (g_emaDirectionLock < 0);
+}
+
+bool EmaDirectionAllowsLeg(const ENUM_VGRID_LEG leg)
+{
+   if(IsVirtualGridLegBuyEntryLeg(leg))
+      return EmaDirectionAllowsBuyEntries();
+   if(IsVirtualGridLegSellEntryLeg(leg))
+      return EmaDirectionAllowsSellEntries();
+   return true;
+}
+
+void EmaDirectionPurgeBlockedSidePendings()
+{
+   if(!EnableEmaDirectionFilter || g_emaDirectionLock == 0)
+      return;
+
+   const bool allowBuy = EmaDirectionAllowsBuyEntries();
+   const bool allowSell = EmaDirectionAllowsSellEntries();
+
+   if(GridUsesVirtualPendingMode())
+   {
+      for(int i = ArraySize(g_virtualPending) - 1; i >= 0; i--)
+      {
+         const ENUM_VGRID_LEG leg = g_virtualPending[i].leg;
+         if((!allowBuy && IsVirtualGridLegBuyEntryLeg(leg))
+            || (!allowSell && IsVirtualGridLegSellEntryLeg(leg)))
+            VirtualPendingRemoveAt(i);
+      }
+      return;
+   }
+
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
+   {
+      const ulong ticket = OrderGetTicket(i);
+      if(ticket == 0 || !OrderIsOurSymbolAndMagic(ticket))
+         continue;
+      if(!OrderCommentIsGridPending(OrderGetString(ORDER_COMMENT)))
+         continue;
+      ENUM_VGRID_LEG leg = VGRID_LEG_BUY_ABOVE;
+      if(!TryParseLegFromOrderComment(OrderGetString(ORDER_COMMENT), leg))
+         continue;
+      if((!allowBuy && IsVirtualGridLegBuyEntryLeg(leg))
+         || (!allowSell && IsVirtualGridLegSellEntryLeg(leg)))
+         trade.OrderDelete(ticket);
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -2048,6 +2048,11 @@ void ProcessVirtualPendingExecutions()
          continue;
       }
       if(!IsVirtualGridLegEnabled(e.leg))
+      {
+         VirtualPendingRemoveAt(i);
+         continue;
+      }
+      if(!EmaDirectionAllowsLeg(e.leg))
       {
          VirtualPendingRemoveAt(i);
          continue;
@@ -2859,6 +2864,8 @@ int OnInit()
    StartupRsiCrossResetLatch();
    StartupRsiInitHandle();
    StartupRsiPollCrossLatch(true);
+   EmaDirectionClearLock();
+   EmaDirectionInitHandle();
 
    g_runtimeSessionActive = !IsCompoundSlPauseActiveNow(TimeCurrent());
    g_gridPendingEntryModeSynced = (ENUM_GRID_PENDING_ENTRY_MODE)-1;
@@ -2871,6 +2878,7 @@ int OnInit()
          ArrayResize(gridLevels, 0);
          sessionStartTime = 0;
          basePrice = 0.0;
+         EmaDirectionClearLock();
          StartupRsiCrossResetLatch();
       }
    }
@@ -2892,8 +2900,15 @@ int OnInit()
          " | D=", VirtualGridResolvedL1(VGRID_LEG_SELL_ABOVE_G));
    if(EnableStartupRsiCrossUpFilter)
       Print("RSI khởi động: BẬT | ", EnumToString(StartupRsiResolvedTimeframe()),
-            " period=", StartupRsiPeriod, " X1=", DoubleToString(StartupRsiCrossUpLevel, 2),
-            (g_startupRsiCrossLatch ? " | đã cắt lên X1" : " | chờ cắt lên X1"));
+            " period=", StartupRsiPeriod,
+            " | ", StartupRsiConfigLabel(),
+            " | X1=", DoubleToString(StartupRsiCrossUpLevel, 2),
+            " | X2=", DoubleToString(StartupRsiCrossDownLevel, 2),
+            (g_startupRsiCrossLatch ? " | đã thỏa" : " | chờ tín hiệu"));
+   if(EnableEmaDirectionFilter)
+      Print("EMA lọc chiều: BẬT | ", EnumToString(EmaDirectionResolvedTimeframe()),
+            " period=", EmaDirectionPeriod,
+            (g_emaDirectionLock > 0 ? " | khóa chỉ Buy" : (g_emaDirectionLock < 0 ? " | khóa chỉ Sell" : " | chờ nến đóng vs EMA")));
    Print("VGridABCD: nạp/rút broker không đổi cấu hình EA — lưới/lot/mục tiêu theo input + P/L giao dịch (TEV), không theo số dư ledger.");
    Print("========================================");
    if(g_runtimeSessionActive)
@@ -2926,6 +2941,7 @@ void OnDeinit(const int reason)
 {
    EventKillTimer();
    StartupRsiReleaseHandle();
+   EmaDirectionReleaseHandle();
    CompoundFloatThrHudDeleteAll();
    MonthlyProfitPanelDeleteAll();
    ObjectDelete(0, VGRIDABCD_EA_START_VLINE);
@@ -2981,6 +2997,7 @@ void OnTick()
          ArrayResize(gridLevels, 0);
          sessionStartTime = 0;
          basePrice = 0.0;
+         EmaDirectionClearLock();
          StartupRsiCrossResetLatch();
       }
       return;
@@ -2990,12 +3007,12 @@ void OnTick()
 
    if(basePrice <= 0.0)
    {
-      if(EnableStartupRsiCrossUpFilter && !g_startupRsiCrossLatch)
+      if(StartupRsiFilterActive() && !g_startupRsiCrossLatch)
          StartupRsiPollCrossLatch(false);
       if(!TryPlaceBaseAfterStartupFilters())
          return;
       Print("VGridABCD: đặt gốc — base=", DoubleToString(basePrice, dgt),
-            (EnableStartupRsiCrossUpFilter ? " (RSI cắt lên X1)" : ""));
+            (StartupRsiFilterActive() ? " (RSI " + StartupRsiConfigLabel() + ")" : ""));
       if(EnableResetNotification)
          SendResetNotification("Đủ điều kiện — bắt đầu lưới chờ ảo");
       ManageGridOrders();
@@ -3020,7 +3037,6 @@ void OnTick()
    ProcessVirtualGridLegTradingStops();
 
    double compoundOpenProfitSwapUsd = 0.0;
-   double compoundSessionPlRawOpenProfitSwapUsd = 0.0;
    for(int i = PositionsTotal() - 1; i >= 0; i--)
    {
       const ulong ticket = PositionGetTicket(i);
@@ -3030,37 +3046,25 @@ void OnTick()
          continue;
       if(!CompoundPositionPassesSessionFilter(ticket))
          continue;
-      compoundOpenProfitSwapUsd += GetCompoundOpenProfitSwapContribution(ticket);
-      compoundSessionPlRawOpenProfitSwapUsd += PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+      compoundOpenProfitSwapUsd += PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
    }
 
    const double compoundTriggerProgressUsd = GetCompoundTriggerProgressUsd(compoundOpenProfitSwapUsd);
 
    if(EnableCompoundTotalFloatingProfit && GetCompoundBaseTriggerUsd() > 0.0)
    {
-      if(compoundTriggerProgressUsd >= GetCompoundFloatingTriggerThresholdUsd())
-         g_compoundThresholdReached = true;
-      else if(!g_compoundTotalProfitActive && !g_compoundArmed && !g_compoundAfterClearWaitGrid)
-         g_compoundThresholdReached = false;
+      if(g_compoundTotalProfitActive)
+         ProcessCompoundTotalProfitTrailing();
+      else
+      {
+         CompoundRefreshTrackingReference(compoundTriggerProgressUsd);
+         if(g_compoundAfterClearWaitGrid)
+            ProcessCompoundWaitingFirstGridStep();
+      }
    }
-
-   if(g_compoundTotalProfitActive)
-      ProcessCompoundTotalProfitTrailing();
-   else if(g_compoundAfterClearWaitGrid)
-      ProcessCompoundPostActivationGridStepWait(compoundOpenProfitSwapUsd);
 
    if(EnableResetNotification)
       UpdateSessionStatsForNotification();
-
-   if(basePrice > 0.0
-      && !g_compoundTotalProfitActive && !g_compoundArmed && !g_compoundAfterClearWaitGrid
-      && EnableCompoundTotalFloatingProfit && GetCompoundBaseTriggerUsd() > 0.0
-      && compoundTriggerProgressUsd >= GetCompoundFloatingTriggerThresholdUsd())
-   {
-      TryArmCompoundTotalProfitMode();
-   }
-
-   ProcessCompoundArming(compoundOpenProfitSwapUsd);
 
    ManageGridOrdersThrottled();
 }
@@ -3568,7 +3572,7 @@ void CloseAllPositionsAndOrders()
       trade.OrderDelete(ticket);
    }
    VirtualPendingClear();
-   CompoundModeClearState();
+   // Không gọi CompoundModeClearState ở đây — caller (vd. CompoundResetAfterCommonSlHit) xử lý sau khi deal đóng.
 }
 
 //+------------------------------------------------------------------+
@@ -3631,13 +3635,14 @@ void OnTradeTransaction(const MqlTradeTransaction& trans,
                   + HistoryDealGetDouble(trans.deal, DEAL_SWAP)
                   + HistoryDealGetDouble(trans.deal, DEAL_COMMISSION);
    if(eaAttachTime > 0 && dealTime >= (long)eaAttachTime)
-      CompoundCarryApplyFromDealOut(dealProfitSwap);
+   {
+      if(!CompoundCarrySkipsDealOutFromCompoundCommonSl(dealReason, dealProfitSwap))
+         CompoundCarryApplyFromDealOut(dealProfitSwap);
+   }
    if(sessionStartTime > 0 && dealTime >= (long)sessionStartTime)
    {
-      g_compoundSessionClosedTotalProfitSwapUsd += dealProfitSwap;
-      g_compoundSessionClosedNegativeProfitSwapUsd += MathMin(0.0, dealProfitSwap);
-      if(dealReason == DEAL_REASON_TP)
-         g_compoundSessionClosedTpProfitSwapUsd += dealProfitSwap;
+      if(dealReason == DEAL_REASON_SL || dealReason == DEAL_REASON_TP)
+         g_compoundSessionClosedSlTpProfitSwapUsd += dealProfitSwap;
    }
    if(eaAttachTime > 0 && dealTime >= (long)eaAttachTime)
    {
@@ -4351,9 +4356,8 @@ void ProcessVirtualGridLegTradingStops()
 void InitializeGridLevels()
 {
    VirtualPendingClear();
-   g_compoundSessionClosedNegativeProfitSwapUsd = 0.0;
-   g_compoundSessionClosedTpProfitSwapUsd = 0.0;
-   g_compoundSessionClosedTotalProfitSwapUsd = 0.0;
+   g_compoundSessionClosedSlTpProfitSwapUsd = 0.0;
+   g_compoundCommonSlCarrySuppress = false;
    // Current session = 0 and start counting from here (called when EA attached or EA auto reset)
    sessionStartTime = TimeCurrent();
    sessionStartBalance = GetTradingEquityViewUSD();
@@ -4373,6 +4377,7 @@ void InitializeGridLevels()
       gridLevels[i] = GetGridLevelPrice(i);
    Print("Initialized ", totalLevels, " levels: ±1 at ", DoubleToString(GridFirstLevelOffsetPips, 1), " pip from base; step ", GridDistancePips, " pips between levels");
 
+   EmaDirectionSnapshotLockAtSessionStart();
    CompoundFloatThrHudUpdate(true);
 }
 
@@ -4477,10 +4482,15 @@ void ManageGridOrders()
    if(CompoundBlocksNewPendingOrders())
       return;
 
+   EmaDirectionPollLockIfNeeded();
+   if(EnableEmaDirectionFilter && g_emaDirectionLock == 0)
+      return;
+
    GridPendingEntryModeSync();
    SessionFloatLossAdjustPoll();
 
    CancelStopOrdersOutsideBaseZone();
+   EmaDirectionPurgeBlockedSidePendings();
 
    if(ArraySize(gridLevels) < MaxGridLevels + 1)
       return;
@@ -4522,6 +4532,8 @@ void ManageGridOrders()
 void EnsureOrderAtLevel(ENUM_VGRID_LEG leg, ENUM_ORDER_TYPE orderType, double priceLevel, int levelNum)
 {
    if(!IsVirtualGridLegEnabled(leg))
+      return;
+   if(!EmaDirectionAllowsLeg(leg))
       return;
    ulong  ticket       = 0;
    double existingPrice = 0.0;
@@ -4654,6 +4666,8 @@ bool CanPlaceOrderAtLevel(ENUM_ORDER_TYPE orderType, ENUM_VGRID_LEG leg, double 
 //+------------------------------------------------------------------+
 void PlacePendingOrder(ENUM_ORDER_TYPE orderType, ENUM_VGRID_LEG leg, double priceLevel, int levelNum)
 {
+   if(!EmaDirectionAllowsLeg(leg))
+      return;
    double price = NormalizeDouble(priceLevel, dgt);
    double lot   = GetLotForVirtualGridLeg(leg, MathAbs(levelNum));
    double tp = ComputeVirtualTakeProfitPrice(orderType, leg, price, levelNum);
