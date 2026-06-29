@@ -50,8 +50,8 @@ enum ENUM_COMPOUND_TRIGGER_PROGRESS_MODE
 };
 
 input group "1) GRID —"
-input double GridDistancePips = 5000.0;         // Bước lưới D (pip) từ bậc 2+
-input double GridFirstLevelOffsetPips = 2500.0; // Khoảng cách bậc ±1 so với gốc (pip)
+input double GridDistancePips = 1000.0;         // Bước lưới D (pip) từ bậc 2+
+input double GridFirstLevelOffsetPips = 500.0; // Khoảng cách bậc ±1 so với gốc (pip)
 input int MaxGridLevels = 80;                   // Số bậc mỗi phía
 
 input group "2) CHUNG (MAGIC / COMMENT) —"
@@ -70,33 +70,33 @@ input group "3) CHỜ ẢO A/B/C/D (mỗi chân: + và − gốc) —"
 input group "3a - Buy A (+/−) — lot / TP / Trading Stop —"
 input bool   EnableLegBuyA = true;               // Bật/tắt chân Buy A (trên + dưới gốc)
 input double VGridL1BuyA = 0.01;
-input ENUM_LOT_SCALE VGridScaleBuyA = LOT_FIXED;
+input ENUM_LOT_SCALE VGridScaleBuyA = LOT_ARITHMETIC;
 input double VGridLotAddBuyA = 0.01;
 input double VGridLotMultBuyA = 1.5;
 input double VGridMaxLotBuyA = 1.0;
 input bool   VGridTpNextBuyA = false;
 input double VGridTpPipsBuyA = 0.0;
-input double VGridTradingStopTriggerPipsBuyA = 5000.0; // Trading Stop 3a: đạt lãi X pip thì kích hoạt (0 = tắt)
-input double VGridTradingStopLockPipsBuyA = 1000.0;    // Trading Stop 3a: khi kích hoạt đặt SL dương +X1 pip từ giá mở
-input double VGridTradingStopStepPipsBuyA = 5000.0;    // Trading Stop 3a: cứ đi thêm X pip thuận lợi thì dời SL thêm X pip
+input double VGridTradingStopTriggerPipsBuyA = 0.0; // Trading Stop 3a: đạt lãi X pip thì kích hoạt (0 = tắt)
+input double VGridTradingStopLockPipsBuyA = 0.0;    // Trading Stop 3a: khi kích hoạt đặt SL dương +X1 pip từ giá mở
+input double VGridTradingStopStepPipsBuyA = 0.0;    // Trading Stop 3a: cứ đi thêm X pip thuận lợi thì dời SL thêm X pip
 
 input group "3b - Buy B (+/−) — lot / TP / Trading Stop —"
 input bool   EnableLegBuyB = true;               // Bật/tắt chân Buy B (trên + dưới gốc)
 input double VGridL1BuyB = 0.01;
-input ENUM_LOT_SCALE VGridScaleBuyB = LOT_FIXED;
+input ENUM_LOT_SCALE VGridScaleBuyB = LOT_ARITHMETIC;
 input double VGridLotAddBuyB = 0.01;
 input double VGridLotMultBuyB = 0.3;
 input double VGridMaxLotBuyB = 1.0;
 input bool   VGridTpNextBuyB = true;
 input double VGridTpPipsBuyB = 0.0;
-input double VGridTradingStopTriggerPipsBuyB = 5000.0; // Trading Stop 3b: đạt lãi X pip thì kích hoạt (0 = tắt)
-input double VGridTradingStopLockPipsBuyB = 1000.0;    // Trading Stop 3b: khi kích hoạt đặt SL dương +X1 pip từ giá mở
-input double VGridTradingStopStepPipsBuyB = 5000.0;    // Trading Stop 3b: cứ đi thêm X pip thuận lợi thì dời SL thêm X pip
+input double VGridTradingStopTriggerPipsBuyB = 0.0; // Trading Stop 3b: đạt lãi X pip thì kích hoạt (0 = tắt)
+input double VGridTradingStopLockPipsBuyB = 0.0;    // Trading Stop 3b: khi kích hoạt đặt SL dương +X1 pip từ giá mở
+input double VGridTradingStopStepPipsBuyB = 0.0;    // Trading Stop 3b: cứ đi thêm X pip thuận lợi thì dời SL thêm X pip
 
 input group "3c - Sell C (+/−) — lot / TP / Trading Stop —"
-input bool   EnableLegSellC = false;             // Bật/tắt chân Sell C (trên + dưới gốc)
+input bool   EnableLegSellC = true;              // Bật/tắt chân Sell C (trên + dưới gốc)
 input double VGridL1SellC = 0.01;
-input ENUM_LOT_SCALE VGridScaleSellC = LOT_FIXED;
+input ENUM_LOT_SCALE VGridScaleSellC = LOT_ARITHMETIC;
 input double VGridLotAddSellC = 0.01;
 input double VGridLotMultSellC = 1.5;
 input double VGridMaxLotSellC = 1.0;
@@ -107,9 +107,9 @@ input double VGridTradingStopLockPipsSellC = 0.0;  // Trading Stop 3c: khi kích
 input double VGridTradingStopStepPipsSellC = 0.0;  // Trading Stop 3c: cứ đi thêm X pip thuận lợi thì dời SL thêm X pip
 
 input group "3d - Sell D (+/−) — lot / TP / Trading Stop —"
-input bool   EnableLegSellD = false;             // Bật/tắt chân Sell D (trên + dưới gốc)
+input bool   EnableLegSellD = true;              // Bật/tắt chân Sell D (trên + dưới gốc)
 input double VGridL1SellD = 0.01;
-input ENUM_LOT_SCALE VGridScaleSellD = LOT_FIXED;
+input ENUM_LOT_SCALE VGridScaleSellD = LOT_ARITHMETIC;
 input double VGridLotAddSellD = 0.01;
 input double VGridLotMultSellD = 0.3;
 input double VGridMaxLotSellD = 1.0;
@@ -132,11 +132,11 @@ input double GridCommonSlPipsFromBase = 3000.0; // X pip: Buy SL = gốc − X; 
 
 input group "5) GỒNG LÃI TỔNG (6B1) —"
 input bool   EnableCompoundCarry = false; // Bật: deal OUT âm cộng carry → ngưỡng gồng = gốc + carry; tắt = không cộng carry
-input bool   EnableCompoundTotalFloatingProfit = false; // Bật gồng lãi tổng 6b1 (Stop)
+input bool   EnableCompoundTotalFloatingProfit = true; // Bật gồng lãi tổng 6b1 (Stop)
 input ENUM_COMPOUND_TRIGGER_PROGRESS_MODE CompoundTriggerProgressMode = COMPOUND_PROGRESS_OPEN_PLUS_SESSION_CLOSED_SL_TP; // Chế độ ngưỡng gồng lãi tổng
-input double CompoundTotalProfitTriggerUSD = 300.0; // Ngưỡng gốc (USD); ngưỡng thực = gốc (+ carry nếu bật carry)
+input double CompoundTotalProfitTriggerUSD = 10.0; // Ngưỡng gốc (USD); ngưỡng thực = gốc (+ carry nếu bật carry)
 input bool   CompoundResetOnCommonSlHit = true; // Chạm SL chung thì reset
-input bool   EnableCompoundSlPauseUntilNextServerDay = true; // Bật: gồng lãi tổng chạm SL chung → tạm dừng EA tới ngày server kế tiếp mới cho khởi động
+input bool   EnableCompoundSlPauseUntilNextServerDay = false; // Bật: gồng lãi tổng chạm SL chung → tạm dừng EA tới ngày server kế tiếp mới cho khởi động
 
 input group "6) RSI — khởi động EA —"
 input bool   EnableStartupRsiCrossUpFilter = false;      // Bật: chờ RSI cắt lên X1 và/hoặc cắt xuống X2 (nến đóng) rồi mới đặt gốc
@@ -148,8 +148,8 @@ input double StartupRsiCrossDownLevel = 30.0;            // X2 cắt xuống (RS
 input int    StartupRsiPreCrossDownBarsAboveX2 = 0;      // Trước cắt xuống X2: X nến đóng liên tiếp RSI > X2; 0 = bỏ
 
 input group "6b · EMA — lọc chiều lưới —"
-input bool   EnableEmaDirectionFilter = false; // Bật: khóa chiều Buy/Sell theo nến đóng vs EMA (đến khi EA reset)
-input ENUM_TIMEFRAMES EmaDirectionTimeframe = PERIOD_CURRENT; // Khung EMA; PERIOD_CURRENT = khung chart
+input bool   EnableEmaDirectionFilter = true; // Bật: khóa chiều Buy/Sell theo nến đóng vs EMA (đến khi EA reset)
+input ENUM_TIMEFRAMES EmaDirectionTimeframe = PERIOD_M15; // Khung EMA; PERIOD_CURRENT = khung chart
 input int    EmaDirectionPeriod = 50;        // Chu kỳ EMA
 
 input group "7) THÔNG BÁO —"
