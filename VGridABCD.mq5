@@ -49,6 +49,13 @@ enum ENUM_COMPOUND_TRIGGER_PROGRESS_MODE
    COMPOUND_PROGRESS_OPEN_PLUS_SESSION_CLOSED_SL_TP = 1  // Ngưỡng tổng lệnh mở + lệnh đóng SL/TP trong phiên
 };
 
+// 6B1: khi đặt SL chung gồng lãi tổng — xử lý chờ ảo/broker.
+enum ENUM_COMPOUND_CLEAR_PENDING_MODE
+{
+   COMPOUND_CLEAR_PENDING = 0,    // Xóa lệnh chờ ảo
+   COMPOUND_KEEP_PENDING = 1      // Giữ nguyên lệnh chờ ảo
+};
+
 // 6b: chế độ lọc chiều EMA.
 enum ENUM_EMA_DIRECTION_MODE
 {
@@ -143,6 +150,7 @@ input bool   EnableCompoundTotalFloatingProfit = true; // Bật gồng lãi tổ
 input ENUM_COMPOUND_TRIGGER_PROGRESS_MODE CompoundTriggerProgressMode = COMPOUND_PROGRESS_OPEN_PLUS_SESSION_CLOSED_SL_TP; // Chế độ ngưỡng gồng lãi tổng
 input double CompoundTotalProfitTriggerUSD = 10.0; // Ngưỡng gốc (USD); ngưỡng thực = gốc (+ carry nếu bật carry)
 input bool   CompoundResetOnCommonSlHit = true; // Chạm SL chung thì reset
+input ENUM_COMPOUND_CLEAR_PENDING_MODE CompoundClearPendingOnCommonSl = COMPOUND_CLEAR_PENDING; // Khi đặt SL chung gồng: chờ ảo/broker
 input bool   EnableCompoundSlPauseUntilNextServerDay = false; // Bật: gồng lãi tổng chạm SL chung → tạm dừng EA tới ngày server kế tiếp mới cho khởi động
 
 input group "6) RSI — khởi động EA —"
@@ -1047,14 +1055,10 @@ bool CompoundFindPointAForReferenceSide(const bool buyReference, double &refPxOu
 }
 
 //+------------------------------------------------------------------+
-//| Xóa chờ ảo/broker + gỡ TP mọi vị thế đang mở.                     |
+//| Gỡ TP mọi vị thế mở (bước 2 gồng lãi tổng).                        |
 //+------------------------------------------------------------------+
-void CompoundClearPendingAndRemoveAllTp()
+void CompoundRemoveAllTpFromOpenPositions()
 {
-   VirtualPendingClear();
-   if(GridUsesBrokerPendingMode())
-      BrokerPendingClearAll();
-
    trade.SetExpertMagicNumber(MagicAA);
    for(int p = 0; p < PositionsTotal(); p++)
    {
@@ -1068,6 +1072,27 @@ void CompoundClearPendingAndRemoveAllTp()
       if(curTP > 0.0)
          ModifyPositionSLTP(ticket, curSL, 0.0);
    }
+}
+
+//+------------------------------------------------------------------+
+//| Xóa chờ ảo/broker khi đặt SL chung gồng (nếu input bật).           |
+//+------------------------------------------------------------------+
+void CompoundClearPendingOrdersIfEnabled()
+{
+   if(CompoundClearPendingOnCommonSl != COMPOUND_CLEAR_PENDING)
+      return;
+   VirtualPendingClear();
+   if(GridUsesBrokerPendingMode())
+      BrokerPendingClearAll();
+}
+
+//+------------------------------------------------------------------+
+//| Xóa chờ ảo/broker (tùy input) + gỡ TP mọi vị thế đang mở.         |
+//+------------------------------------------------------------------+
+void CompoundClearPendingAndRemoveAllTp()
+{
+   CompoundClearPendingOrdersIfEnabled();
+   CompoundRemoveAllTpFromOpenPositions();
 }
 
 //+------------------------------------------------------------------+
@@ -1252,7 +1277,9 @@ void ProcessCompoundWaitingFirstGridStep()
 
    Print("VGridABCD: Gồng lãi — giá +1 bước lưới: SL chung tại A=",
          DoubleToString(g_compoundCommonSlLine, dgt),
-         " | đã xóa chờ ảo + gỡ TP | không bổ sung chờ mới.");
+         (CompoundClearPendingOnCommonSl == COMPOUND_CLEAR_PENDING
+            ? " | xóa chờ ảo/broker + gỡ TP | không bổ sung chờ mới"
+            : " | giữ nguyên chờ ảo/broker + gỡ TP | không bổ sung chờ mới"));
 }
 
 //+------------------------------------------------------------------+
